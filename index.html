@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-title" content="Habita Construtora"/>
+<title>Habita Construtora</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#F9FAFB;min-height:100vh}
+input,select,textarea,button{font-family:inherit}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.spin{animation:spin 1s linear infinite;display:inline-block}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+// ── Firebase config ──────────────────────────────────────────────────────────
+const app = initializeApp({
+  apiKey: "AIzaSyCKjp2T1SL7qF5UfuwJkT5dRQ2a2KW-oSY",
+  authDomain: "habita-construtora.firebaseapp.com",
+  projectId: "habita-construtora",
+  storageBucket: "habita-construtora.firebasestorage.app",
+  messagingSenderId: "245327126652",
+  appId: "1:245327126652:web:dd4092f35f295b6151e9f9"
+});
+const db = getFirestore(app);
+
+// ── Storage helpers (Firebase) ────────────────────────────────────────────────
+const USER_ID = "augusto"; // ID fixo do usuário
+
+async function fsave(key, data) {
+  try {
+    await setDoc(doc(db, USER_ID, key), { value: JSON.stringify(data) });
+  } catch(e) { console.error("Erro ao salvar:", e); }
+}
+async function fload(key, fallback) {
+  try {
+    const d = await getDoc(doc(db, USER_ID, key));
+    if (d.exists()) return JSON.parse(d.data().value);
+    return fallback;
+  } catch(e) { return fallback; }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const uid   = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+const today = () => new Date().toISOString().split("T")[0];
+const fmt   = v => parseFloat(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const fmtD  = d => { try { return new Date(d+"T12:00").toLocaleDateString("pt-BR"); } catch { return d||""; } };
+
+// ── Constantes ────────────────────────────────────────────────────────────────
+const STATUS_LIST = ["Planejamento","Em andamento","Pausada","Atrasada","Finalizada"];
+const STATUS_C    = {"Em andamento":["#FEF3C7","#92400E"],"Planejamento":["#DBEAFE","#1E40AF"],"Atrasada":["#FEE2E2","#991B1B"],"Finalizada":["#D1FAE5","#065F46"],"Pausada":["#F3F4F6","#374151"]};
+const CATS        = ["Material","Mão de obra","Frete","Equipamentos","Alimentação","Outros"];
+const CAT_IC      = {Material:"🧱","Mão de obra":"👷",Frete:"🚚",Equipamentos:"🔧",Alimentação:"🍱",Outros:"📦"};
+const FUNCOES     = ["Pedreiro","Servente","Eletricista","Encanador","Pintor","Carpinteiro","Armador","Mestre de Obras","Outros"];
+const OCORR       = ["Trabalhou","Falta","Feriado","Chuva — sem serviço","Meio período","Atestado"];
+const OC_C        = {"Trabalhou":"#059669","Falta":"#DC2626","Feriado":"#6366F1","Chuva — sem serviço":"#3B82F6","Meio período":"#F59E0B","Atestado":"#9CA3AF"};
+const OC_I        = {"Trabalhou":"✅","Falta":"❌","Feriado":"🏖️","Chuva — sem serviço":"🌧️","Meio período":"⏱️","Atestado":"🏥"};
+const FASES_OBRA  = [
+  {id:1,nome:"Adequações de terreno",pct:null,escopo:"Terraplenagem, muros de arrimo, impermeabilização e drenagem."},
+  {id:2,nome:"Canteiro e despesas gerais",pct:0.015,escopo:"Barracão, água, luz, ferramentas, plotagens de projetos."},
+  {id:3,nome:"Serviços preliminares",pct:0.010,escopo:"Tapume, gabarito, marcações, limpeza e capina do terreno."},
+  {id:4,nome:"Fundação",pct:0.060,escopo:"Fundação pronta + cintas de piso: escavação, concreto, vergalhões."},
+  {id:5,nome:"Estrutura",pct:0.160,escopo:"Pilares, vigas e laje. Insumos: madeira, aço, concreto e escoramento."},
+  {id:6,nome:"Alvenaria",pct:0.030,escopo:"Fechamento de paredes com tijolos cerâmicos, blocos ou dry-wall."},
+  {id:7,nome:"Revestimentos argamassados",pct:0.030,escopo:"Reboco interno, reboco de fachada, contrapiso."},
+  {id:8,nome:"Instalações elétricas",pct:0.025,escopo:"Mangueiras, cabos, quadros, tomadas e interruptores."},
+  {id:9,nome:"Instalações hidráulicas",pct:0.015,escopo:"Tubos, conexões, caixas de gordura e passagem."},
+  {id:10,nome:"Instalações especiais",pct:0.010,escopo:"Piscina, câmeras, aquecimento solar, ar-condicionado, fotovoltaico."},
+  {id:11,nome:"Impermeabilizações",pct:0.030,escopo:"Lajes, varandas, decks, banheiros, áreas molhadas e alicerces."},
+  {id:12,nome:"Acabamentos",pct:0.180,escopo:"Porcelanatos, pedras, pastilhas, argamassas, rejuntes, ralos lineares."},
+  {id:13,nome:"Cobertura",pct:0.030,escopo:"Telhado, pedras para pingadeira, calhas e rufos."},
+  {id:14,nome:"Esquadrias e vidros",pct:0.150,escopo:"Esquadrias de alumínio, Blindex, portas de madeira, guarda-corpos."},
+  {id:15,nome:"Decoração e luminotécnica",pct:0.060,escopo:"Luminárias, fitas de LED e itens decorativos especiais."},
+  {id:16,nome:"Marmoraria, Louças e Metais",pct:0.060,escopo:"Bancadas, marmoraria, bacias sanitárias, cubas, torneiras e metais."},
+  {id:17,nome:"Forros",pct:0.030,escopo:"Forro de gesso e lambri de madeira."},
+  {id:18,nome:"Pintura interna e externa",pct:0.030,escopo:"Tintas, massa corrida, textura de fachada, grafiatos."},
+  {id:19,nome:"Pavimentações e área verde",pct:0.010,escopo:"Piso intertravado, grama, terra vegetal, calçada e pisos cimentados."},
+  {id:20,nome:"Finalização",pct:0.010,escopo:"Bota fora de entulhos, limpeza final, arremates diversos."},
+];
+const ETAPAS = [
+  {id:"fundacao",nome:"Fundação",icon:"⛏️",itens:["Locação da obra conferida","Escavação no nível correto","Formas conferidas e alinhadas","Armação conforme projeto","Cobrimento mínimo do concreto","Limpeza do fundo da vala","Adensamento do concreto","Cura do concreto executada"]},
+  {id:"estrutura",nome:"Estrutura",icon:"🏗️",itens:["Escoramento adequado","Armação de pilares conferida","Armação de vigas conferida","Prumo dos pilares verificado","Nível das vigas verificado","Posição das janelas marcada","Caixas elétricas embutidas antes da concretagem","Cura realizada corretamente"]},
+  {id:"alvenaria",nome:"Alvenaria",icon:"🧱",itens:["Prumo das paredes verificado","Nível das fiadas conferido","Espessura das juntas","Vergas e contravergas executadas","Amarração nos pilares","Respingos removidos","Proteção das paredes durante chuva"]},
+  {id:"eletrica",nome:"Elétrica",icon:"⚡",itens:["Altura das tomadas conferida","Conduítes passados corretamente","Quadro elétrico dimensionado","Aterramento executado","Pontos de ar condicionado previstos","Alimentação para coifa","Circuito para lava louça","Ponto para forno elétrico","Circuito dedicado para geladeira","Pontos de internet","CFTV previsto","Campainha prevista"]},
+  {id:"hidraulica",nome:"Hidráulica",icon:"💧",itens:["Caimento das tubulações correto","Pontos de água fria conferidos","Pontos de água quente conferidos","Tipo de torneiras definido","Ponto lava louça: hidráulica e esgoto","Caixa d'água dimensionada","Teste de estanqueidade realizado","Instalação de gás com ART"]},
+  {id:"cobertura",nome:"Cobertura",icon:"🏠",itens:["Estrutura conferida","Caimento mínimo das telhas","Cumeeira vedada","Rufo e contra-rufo executados","Calhas e coletores instalados","Impermeabilização de lajes","Telhado fixado corretamente"]},
+  {id:"acabamento",nome:"Acabamento",icon:"✨",itens:["Emboço nivelado","Reboco executado","Azulejos com caimento correto","Rodapés alinhados","Pintura adequada","Portas e janelas reguladas","Bancadas e marmoraria niveladas","Louças e metais instalados","Limpeza final executada"]},
+];
+const TOTAL_ITENS = ETAPAS.reduce((a,e)=>a+e.itens.length,0);
+
+// ── Estado global ─────────────────────────────────────────────────────────────
+let state = {
+  page: "dashboard",
+  obras: [],
+  obraSel: null,
+  abaDetalhe: "visao",
+  formObra: null,
+  prestadores: [],
+  diarias: [],
+  viewPrest: "lista",
+  selPrest: null,
+  mes: today().slice(0,7),
+  loading: true,
+};
+
+function setState(newState) {
+  state = {...state, ...newState};
+  render();
+}
+
+// ── Render root ───────────────────────────────────────────────────────────────
+async function init() {
+  const [obras, prest, diarias] = await Promise.all([
+    fload("obras", []),
+    fload("prestadores", []),
+    fload("diarias", []),
+  ]);
+  state.obras = obras;
+  state.prestadores = prest;
+  state.diarias = diarias;
+  state.loading = false;
+  render();
+}
+
+function render() {
+  document.getElementById("app").innerHTML = buildApp();
+  attachEvents();
+}
+
+// ── Logo SVG ──────────────────────────────────────────────────────────────────
+function logoSVG() {
+  return `<div style="display:flex;align-items:center;gap:8px">
+    <svg width="36" height="36" viewBox="0 0 80 80">
+      <rect x="6" y="8" width="11" height="64" fill="#5a6475" rx="2"/>
+      <rect x="6" y="34" width="34" height="10" fill="#5a6475" rx="2"/>
+      <rect x="32" y="8" width="28" height="8" fill="#c0431a" rx="1"/>
+      <rect x="32" y="18" width="28" height="7" fill="#d4541f" rx="1"/>
+      <rect x="32" y="27" width="28" height="7" fill="#c0431a" rx="1"/>
+      <rect x="32" y="36" width="28" height="7" fill="#d4541f" rx="1"/>
+      <rect x="32" y="45" width="28" height="7" fill="#c0431a" rx="1"/>
+      <rect x="32" y="54" width="28" height="8" fill="#d4541f" rx="1"/>
+      <rect x="32" y="62" width="28" height="10" fill="#c0431a" rx="1"/>
+    </svg>
+    <div>
+      <div style="font-weight:900;font-size:15px;color:#3d4450;letter-spacing:1px;line-height:1">HABITA</div>
+      <div style="font-weight:600;font-size:9px;color:#5a6475;letter-spacing:3px;line-height:1;margin-top:2px">CONSTRUTORA</div>
+    </div>
+  </div>`;
+}
+
+// ── Bar ───────────────────────────────────────────────────────────────────────
+function bar(pct, color="#F59E0B", h=6) {
+  return `<div style="background:#F3F4F6;border-radius:99px;height:${h}px;overflow:hidden">
+    <div style="width:${Math.min(pct||0,100)}%;height:${h}px;background:${color};border-radius:99px;transition:width .4s"></div>
+  </div>`;
+}
+
+function badge(s) {
+  const [bg,cl] = STATUS_C[s]||["#F3F4F6","#374151"];
+  return `<span style="background:${bg};color:${cl};font-size:11px;font-weight:700;padding:2px 8px;border-radius:12px;white-space:nowrap">${s}</span>`;
+}
+
+// ── Build App ─────────────────────────────────────────────────────────────────
+function buildApp() {
+  const NAV = [{id:"dashboard",icon:"📊",label:"Dashboard"},{id:"obras",icon:"🏗️",label:"Obras"},{id:"prestadores",icon:"👷",label:"Equipe"},{id:"checklist_g",icon:"✅",label:"Checklist"},{id:"custos_g",icon:"💰",label:"Custos"}];
+  const navHTML = NAV.map(n => {
+    const active = state.page===n.id || (state.page==="obra_det" && n.id==="obras");
+    return `<button onclick="navTo('${n.id}')" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 0 6px;border:none;background:transparent;cursor:pointer;gap:2px">
+      <span style="font-size:20px;line-height:1">${n.icon}</span>
+      <span style="font-size:10px;font-weight:700;color:${active?"#F59E0B":"#9CA3AF"}">${n.label}</span>
+      ${active?`<div style="width:4px;height:4px;border-radius:50%;background:#F59E0B"></div>`:""}
+    </button>`;
+  }).join("");
+
+  return `
+    <div style="min-height:100vh;background:#F9FAFB">
+      <!-- Header -->
+      <div style="background:#fff;border-bottom:1px solid #F3F4F6;padding:8px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:9">
+        ${logoSVG()}
+        <div style="width:32px;height:32px;background:#F59E0B;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;color:#fff;font-size:11px">HC</div>
+      </div>
+      <!-- Content -->
+      <div style="max-width:640px;margin:0 auto;padding:16px 16px 90px">
+        ${state.loading ? '<div style="text-align:center;padding:60px;color:#9CA3AF;font-size:16px">⏳ Carregando...</div>' : buildPage()}
+      </div>
+      <!-- Bottom Nav -->
+      <nav style="position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #F3F4F6;display:flex;z-index:20">
+        ${navHTML}
+      </nav>
+      <!-- Modal Obra -->
+      ${state.formObra !== null ? buildObraForm() : ""}
+    </div>`;
+}
+
+function buildPage() {
+  if(state.page==="obra_det" && state.obraSel) return buildObraDetalhe();
+  if(state.page==="dashboard")   return buildDashboard();
+  if(state.page==="obras")       return buildObras();
+  if(state.page==="prestadores") return buildPrestadores();
+  if(state.page==="checklist_g"||state.page==="custos_g") return buildSelecionarObra();
+  return buildDashboard();
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+function buildDashboard() {
+  const obras = state.obras;
+  const at=obras.filter(o=>o.status==="Em andamento").length;
+  const fi=obras.filter(o=>o.status==="Finalizada").length;
+  const al=obras.filter(o=>o.status==="Atrasada").length;
+  const ct=obras.reduce((a,o)=>a+(o.custoAtual||0),0);
+  const ativas=obras.filter(o=>o.status!=="Finalizada");
+
+  return `
+    <div style="padding-bottom:80px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div>
+          <div style="font-weight:900;font-size:20px;color:#1F2937">Visão Geral</div>
+          <div style="font-size:12px;color:#9CA3AF;text-transform:capitalize">${new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long"})}</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+        ${[["🔨","Em andamento",at,"#F59E0B"],["✅","Concluídas",fi,"#059669"],["⚠️","Atrasadas",al,"#DC2626"],["💰","Custo total",fmt(ct),"#374151"]].map(([ic,lb,v,c])=>`
+          <div style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:14px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:22px">${ic}</span>
+              <div>
+                <div style="font-size:11px;color:#9CA3AF;font-weight:600;text-transform:uppercase">${lb}</div>
+                <div style="font-size:20px;font-weight:900;color:${c}">${v}</div>
+              </div>
+            </div>
+          </div>`).join("")}
+      </div>
+      ${al>0?`<div style="background:#FFF5F5;border:1px solid #FCA5A5;border-radius:12px;padding:14px;margin-bottom:14px;display:flex;gap:10px;align-items:center">
+        <span style="font-size:20px">🚨</span>
+        <div><div style="font-weight:700;color:#DC2626;font-size:13px">${al} obra(s) atrasada(s)</div></div>
+      </div>`:""}
+      ${obras.length===0?`
+        <div style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:40px;text-align:center">
+          <div style="font-size:48px;margin-bottom:12px">🏗️</div>
+          <div style="font-weight:800;font-size:17px;color:#374151;margin-bottom:6px">Bem-vindo à Habita!</div>
+          <div style="font-size:14px;color:#6B7280">Vá em <b>Obras</b> e adicione sua primeira obra.</div>
+        </div>`:`
+        <div style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:16px">
+          <div style="font-weight:700;font-size:12px;color:#6B7280;text-transform:uppercase;margin-bottom:12px">Andamento das obras</div>
+          ${ativas.slice(0,5).map(o=>`
+            <div style="margin-bottom:12px;cursor:pointer" onclick="selObra('${o.id}')">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                <span style="font-size:13px;font-weight:700;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%">${o.nome}</span>
+                <span style="font-size:12px;font-weight:800;color:#F59E0B;flex-shrink:0">${o.progresso||0}%</span>
+              </div>
+              ${bar(o.progresso||0, o.status==="Atrasada"?"#F87171":"#F59E0B")}
+            </div>`).join("")}
+        </div>`}
+    </div>`;
+}
+
+// ── Obras ─────────────────────────────────────────────────────────────────────
+function buildObras() {
+  const obras = state.obras;
+  return `
+    <div style="padding-bottom:80px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div style="font-weight:800;font-size:20px;color:#1F2937">Obras</div>
+        <button onclick="abrirFormObra()" style="background:#F59E0B;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-weight:700;font-size:14px;cursor:pointer">+ Nova obra</button>
+      </div>
+      <input id="busca-obra" oninput="renderObrasLista()" placeholder="🔍  Buscar obra ou cliente..." style="width:100%;padding:9px 14px;border:1px solid #E5E7EB;border-radius:12px;font-size:14px;outline:none;margin-bottom:12px;box-sizing:border-box"/>
+      <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:16px" id="filtros-obra">
+        ${["Todas",...STATUS_LIST].map(f=>`<button onclick="setFiltroObra('${f}')" data-filtro="${f}" style="flex-shrink:0;padding:6px 14px;border-radius:20px;border:${state.filtroObra===f||(!state.filtroObra&&f==='Todas')?"none":"1px solid #E5E7EB"};background:${state.filtroObra===f||(!state.filtroObra&&f==='Todas')?"#F59E0B":"#fff"};color:${state.filtroObra===f||(!state.filtroObra&&f==='Todas')?"#fff":"#6B7280"};font-weight:700;font-size:12px;cursor:pointer">${f}</button>`).join("")}
+      </div>
+      <div id="obras-lista">
+        ${buildObrasLista(obras)}
+      </div>
+    </div>`;
+}
+
+function buildObrasLista(obras) {
+  const filtro = state.filtroObra||"Todas";
+  const busca  = state.buscaObra||"";
+  const list   = obras.filter(o=>{
+    const m = o.nome.toLowerCase().includes(busca.toLowerCase())||o.cliente.toLowerCase().includes(busca.toLowerCase());
+    return m&&(filtro==="Todas"||o.status===filtro);
+  });
+  if(list.length===0) return `<div style="text-align:center;padding:48px 0;color:#9CA3AF">Nenhuma obra encontrada.</div>`;
+  return list.map(o=>{
+    const custo=o.custoAtual||0, prev=parseFloat(o.valorPrevisto)||0;
+    return `
+      <div style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:16px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1;cursor:pointer" onclick="selObra('${o.id}')">
+            <span style="font-size:28px">${o.thumb}</span>
+            <div style="min-width:0">
+              <div style="font-weight:800;font-size:15px;color:#1F2937;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.nome}</div>
+              <div style="font-size:12px;color:#6B7280">${o.cliente}</div>
+              ${o.endereco?`<div style="font-size:11px;color:#9CA3AF;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📍 ${o.endereco}</div>`:""}
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+            ${badge(o.status)}
+            <div style="display:flex;gap:4px">
+              <button onclick="editarObra('${o.id}')" style="background:transparent;border:none;cursor:pointer;font-size:16px">✏️</button>
+              ${o.status!=="Finalizada"?`<button onclick="concluirObra('${o.id}')" style="background:transparent;border:none;cursor:pointer;font-size:16px">✅</button>`:""}
+              <button onclick="confirmarDeletarObra('${o.id}','${o.nome.replace(/'/g,"\\'")}') " style="background:transparent;border:none;cursor:pointer;font-size:16px">🗑️</button>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span style="font-size:12px;color:#6B7280;font-weight:600">Progresso</span>
+          <span style="font-size:12px;font-weight:800;color:#F59E0B">${o.progresso||0}%</span>
+        </div>
+        ${bar(o.progresso||0, o.status==="Atrasada"?"#F87171":"#F59E0B")}
+        ${prev>0?`<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:#9CA3AF">
+          <span>Previsto: <b style="color:#374151">${fmt(prev)}</b></span>
+          <span>Custo: <b style="color:#F59E0B">${fmt(custo)}</b></span>
+        </div>`:""}
+        ${o.prazo?`<div style="font-size:11px;color:#9CA3AF;margin-top:4px">📅 Prazo: ${fmtD(o.prazo)}</div>`:""}
+      </div>`;
+  }).join("");
+}
+
+// ── Obra Detalhe ──────────────────────────────────────────────────────────────
+function buildObraDetalhe() {
+  const obra = state.obraSel;
+  const tabs = [{id:"visao",icon:"📊",l:"Visão"},{id:"checklist",icon:"✅",l:"Checklist"},{id:"diario",icon:"📝",l:"Diário"},{id:"custos",icon:"💰",l:"Custos"}];
+  return `
+    <div style="padding-bottom:80px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+        <button onclick="voltarObras()" style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:10px;padding:8px 12px;cursor:pointer;font-weight:700;color:#374151">← Voltar</button>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:800;font-size:16px;color:#1F2937;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${obra.nome}</div>
+          <div style="font-size:12px;color:#6B7280">${obra.cliente}</div>
+        </div>
+        ${badge(obra.status)}
+        <button onclick="editarObra('${obra.id}')" style="background:transparent;color:#6B7280;border:1px solid #E5E7EB;border-radius:10px;padding:7px 12px;cursor:pointer;font-weight:700;font-size:12px">✏️</button>
+      </div>
+      <div style="display:flex;background:#F3F4F6;border-radius:12px;padding:4px;margin-bottom:20px;gap:2px">
+        ${tabs.map(t=>`<button onclick="setAbaDetalhe('${t.id}')" style="flex:1;padding:8px 4px;border-radius:9px;border:none;background:${state.abaDetalhe===t.id?"#fff":"transparent"};font-weight:700;font-size:12px;color:${state.abaDetalhe===t.id?"#F59E0B":"#6B7280"};cursor:pointer">
+          ${t.icon} ${t.l}
+        </button>`).join("")}
+      </div>
+      <div id="aba-content">
+        ${buildAbaContent()}
+      </div>
+    </div>`;
+}
+
+function buildAbaContent() {
+  const aba = state.abaDetalhe;
+  if(aba==="visao")     return buildTabVisao();
+  if(aba==="checklist") return buildTabChecklist();
+  if(aba==="diario")    return buildTabDiario();
+  if(aba==="custos")    return buildTabCustos();
+  return "";
+}
+
+// ── Tab Visão ─────────────────────────────────────────────────────────────────
+function buildTabVisao() {
+  const obra=state.obraSel;
+  const prev=parseFloat(obra.valorPrevisto)||0,custo=obra.custoAtual||0,dif=prev-custo;
+  return `
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:16px">
+        <div style="font-weight:700;font-size:12px;color:#6B7280;text-transform:uppercase;margin-bottom:12px">Progresso (checklist)</div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+          <span style="font-size:40px;font-weight:900;color:#F59E0B">${obra.progresso||0}%</span>
+          <span style="font-size:13px;color:#9CA3AF">concluído</span>
+        </div>
+        ${bar(obra.progresso||0, 10, obra.status==="Atrasada"?"#F87171":"#F59E0B")}
+        ${obra.prazo?`<div style="font-size:12px;color:#9CA3AF;margin-top:8px">📅 Prazo: ${fmtD(obra.prazo)}</div>`:""}
+      </div>
+      ${prev>0?`
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:14px">
+            <div style="font-size:11px;color:#9CA3AF;text-transform:uppercase;font-weight:700">Previsto</div>
+            <div style="font-size:17px;font-weight:900;color:#374151;margin-top:2px">${fmt(prev)}</div>
+          </div>
+          <div style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:14px">
+            <div style="font-size:11px;color:#9CA3AF;text-transform:uppercase;font-weight:700">Realizado</div>
+            <div style="font-size:17px;font-weight:900;color:#F59E0B;margin-top:2px">${fmt(custo)}</div>
+          </div>
+        </div>
+        <div style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:16px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+            <span style="font-size:13px;color:#6B7280;font-weight:600">Orçamento utilizado</span>
+            <span style="font-size:13px;font-weight:800;color:${custo>prev?"#DC2626":"#059669"}">${prev>0?Math.round(custo/prev*100):0}%</span>
+          </div>
+          ${bar(prev>0?Math.round(custo/prev*100):0, 8, custo>prev?"#F87171":"#34D399")}
+          <div style="font-size:12px;color:${dif>=0?"#059669":"#DC2626"};font-weight:700;margin-top:6px">
+            ${dif>=0?`✅ Saldo: ${fmt(dif)}`:`⚠️ Acima do orçamento: ${fmt(-dif)}`}
+          </div>
+        </div>`:""}
+    </div>`;
+}
+
+// ── Tab Checklist ─────────────────────────────────────────────────────────────
+function buildTabChecklist() {
+  const obra = state.obraSel;
+  const ck   = state.checkData || {};
+
+  if(state.etapaSel) {
+    const etapa = ETAPAS.find(e=>e.id===state.etapaSel);
+    const eApr  = etapa.itens.filter(it=>ck[`${etapa.id}_${it}`]==="ok").length;
+    return `
+      <div>
+        <button onclick="setState({etapaSel:null})" style="color:#F59E0B;font-weight:700;font-size:14px;background:none;border:none;cursor:pointer;margin-bottom:16px;padding:0">← Voltar às etapas</button>
+        <div style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:16px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:22px">${etapa.icon}</span><span style="font-weight:800;font-size:16px">${etapa.nome}</span></div>
+          ${bar(Math.round(eApr/etapa.itens.length*100))}
+          <div style="font-size:11px;text-align:right;color:#F59E0B;font-weight:700;margin-top:4px">${eApr}/${etapa.itens.length}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${etapa.itens.map(item=>{
+            const k=`${etapa.id}_${item}`,st=ck[k];
+            return `
+              <div style="background:${st==="ok"?"#F0FDF4":st==="nok"?"#FFF5F5":"#fff"};border-radius:14px;border:${st==="ok"?"1px solid #A7F3D0":st==="nok"?"1px solid #FCA5A5":"1px solid #F3F4F6"};padding:16px">
+                <div style="font-weight:600;font-size:14px;color:#374151;margin-bottom:10px">${item}</div>
+                <div style="display:flex;gap:8px">
+                  <button onclick="setCheckItem('${etapa.id}','${item.replace(/'/g,"\\'")}','ok')" style="flex:1;padding:8px 0;border-radius:10px;border:none;background:${st==="ok"?"#059669":"#F3F4F6"};color:${st==="ok"?"#fff":"#6B7280"};font-weight:700;font-size:13px;cursor:pointer">✅ Aprovar</button>
+                  <button onclick="setCheckItem('${etapa.id}','${item.replace(/'/g,"\\'")}','nok')" style="flex:1;padding:8px 0;border-radius:10px;border:none;background:${st==="nok"?"#DC2626":"#F3F4F6"};color:${st==="nok"?"#fff":"#6B7280"};font-weight:700;font-size:13px;cursor:pointer">❌ Reprovar</button>
+                  ${st?`<button onclick="setCheckItem('${etapa.id}','${item.replace(/'/g,"\\'")}',null)" style="padding:8px 12px;border-radius:10px;border:none;background:#F3F4F6;color:#6B7280;font-weight:700;font-size:12px;cursor:pointer">↩</button>`:""}
+                </div>
+              </div>`;
+          }).join("")}
+        </div>
+      </div>`;
+  }
+
+  const aprovados  = Object.values(ck).filter(v=>v==="ok").length;
+  const reprovados = Object.values(ck).filter(v=>v==="nok").length;
+  return `
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:16px">
+        <div style="font-weight:700;font-size:12px;color:#6B7280;text-transform:uppercase;margin-bottom:10px">Progresso geral</div>
+        <div style="display:flex;gap:0;margin-bottom:10px">
+          ${[["✅",aprovados,"Aprovados","#059669"],["❌",reprovados,"Reprovados","#DC2626"],["⏳",TOTAL_ITENS-aprovados-reprovados,"Pendentes","#9CA3AF"]].map(([ic,n,lb,c])=>`
+            <div style="flex:1;text-align:center"><div style="font-size:22px;font-weight:900;color:${c}">${n}</div><div style="font-size:11px;color:#9CA3AF">${lb}</div></div>`).join("")}
+        </div>
+        ${bar(Math.round(aprovados/TOTAL_ITENS*100), 6, "#059669")}
+        <div style="font-size:11px;text-align:right;color:#059669;font-weight:700;margin-top:4px">${Math.round(aprovados/TOTAL_ITENS*100)}% — atualiza progresso automaticamente</div>
+      </div>
+      ${ETAPAS.map(etapa=>{
+        const apr=etapa.itens.filter(it=>ck[`${etapa.id}_${it}`]==="ok").length;
+        const rep=etapa.itens.filter(it=>ck[`${etapa.id}_${it}`]==="nok").length;
+        return `
+          <div onclick="setState({etapaSel:'${etapa.id}'})" style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:16px;cursor:pointer">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">${etapa.icon}</span><span style="font-weight:700;font-size:15px;color:#1F2937">${etapa.nome}</span></div>
+              <div style="display:flex;align-items:center;gap:6px">
+                ${rep>0?`<span style="font-size:11px;background:#FEE2E2;color:#991B1B;font-weight:700;padding:2px 8px;border-radius:10px">${rep}⚠️</span>`:""}
+                <span style="font-size:13px;font-weight:800;color:#F59E0B">${Math.round(apr/etapa.itens.length*100)}%</span>
+                <span style="color:#D1D5DB">›</span>
+              </div>
+            </div>
+            ${bar(Math.round(apr/etapa.itens.length*100), 6, rep>0?"#F87171":"#F59E0B")}
+            <div style="font-size:11px;color:#9CA3AF;margin-top:4px">${apr}/${etapa.itens.length} itens — toque para verificar</div>
+          </div>`;
+      }).join("")}
+    </div>`;
+}
+
+// ── Tab Diário ────────────────────────────────────────────────────────────────
+function buildTabDiario() {
+  const entries = state.diarioEntries || [];
+  const form    = state.diarioForm;
+  const CLIMAS  = ["☀️ Ensolarado","🌥️ Nublado","🌧️ Chuva fraca","⛈️ Chuva forte","🌬️ Ventoso"];
+  return `
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <button onclick="toggleDiarioForm()" style="background:#F59E0B;color:#fff;border:none;border-radius:10px;padding:12px;font-weight:700;font-size:14px;cursor:pointer;width:100%">+ Adicionar Registro</button>
+      ${form?`
+        <div style="background:#fff;border-radius:14px;border:1px solid #FDE68A;padding:16px">
+          <div style="font-weight:800;font-size:15px;margin-bottom:14px">Novo Registro</div>
+          <div style="margin-bottom:12px">
+            <div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:6px;text-transform:uppercase">Clima</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              ${CLIMAS.map(c=>`<button onclick="setDiarioClima('${c}')" style="font-size:11px;padding:4px 10px;border-radius:20px;border:${(state.diarioClimasel||CLIMAS[0])===c?"2px solid #F59E0B":"1px solid #E5E7EB"};background:${(state.diarioClimasel||CLIMAS[0])===c?"#FEF3C7":"#F9FAFB"};cursor:pointer;font-weight:600">${c}</button>`).join("")}
+            </div>
+          </div>
+          <div style="margin-bottom:12px">
+            <div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Equipe</div>
+            <input id="diario-equipe" placeholder="Ex: 6 pessoas" value="${state.diarioEquipe||""}" oninput="state.diarioEquipe=this.value" style="width:100%;padding:9px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box;background:#FAFAFA"/>
+          </div>
+          <div style="margin-bottom:12px">
+            <div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Serviços *</div>
+            <textarea id="diario-servicos" rows="3" placeholder="Serviços executados hoje..." oninput="state.diarioServicos=this.value" style="width:100%;padding:10px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;resize:none;box-sizing:border-box">${state.diarioServicos||""}</textarea>
+          </div>
+          <div style="margin-bottom:12px">
+            <div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Observações</div>
+            <textarea id="diario-obs" rows="2" placeholder="Ocorrências, pendências..." oninput="state.diarioObs=this.value" style="width:100%;padding:10px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;resize:none;box-sizing:border-box">${state.diarioObs||""}</textarea>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button onclick="toggleDiarioForm()" style="flex:1;padding:10px;border-radius:10px;border:1px solid #E5E7EB;background:transparent;color:#6B7280;font-weight:700;cursor:pointer">Cancelar</button>
+            <button onclick="salvarDiario()" style="flex:1;padding:10px;border-radius:10px;border:none;background:#F59E0B;color:#fff;font-weight:700;cursor:pointer">Salvar</button>
+          </div>
+        </div>`:""}
+      ${entries.length===0&&!form?`<div style="text-align:center;padding:32px 0;color:#9CA3AF">Nenhum registro ainda.</div>`:""}
+      ${entries.map(e=>`
+        <div style="background:#fff;border-radius:14px;border-left:3px solid #F59E0B;padding:16px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+            <div><div style="font-weight:800;font-size:14px">${fmtD(e.data)}</div><div style="font-size:12px;color:#9CA3AF">${e.hora} ${e.clima}</div></div>
+            <button onclick="deletarDiario('${e.id}')" style="background:transparent;border:none;cursor:pointer;font-size:16px">🗑️</button>
+          </div>
+          ${e.equipe?`<div style="font-size:12px;color:#6B7280;margin-bottom:4px">👷 ${e.equipe}</div>`:""}
+          <div style="font-size:14px;color:#374151">${e.servicos}</div>
+          ${e.obs?`<div style="font-size:12px;color:#6B7280;background:#F9FAFB;border-radius:8px;padding:6px 10px;margin-top:6px">📝 ${e.obs}</div>`:""}
+        </div>`).join("")}
+    </div>`;
+}
+
+// ── Tab Custos ────────────────────────────────────────────────────────────────
+function buildTabCustos() {
+  const obra   = state.obraSel;
+  const custos = state.custosList || [];
+  const prev   = parseFloat(obra.valorPrevisto)||0;
+  const total  = custos.reduce((a,c)=>a+parseFloat(c.valor||0),0);
+  const tPago  = custos.filter(c=>c.pago!==false).reduce((a,c)=>a+parseFloat(c.valor||0),0);
+  const tPend  = custos.filter(c=>c.pago===false).reduce((a,c)=>a+parseFloat(c.valor||0),0);
+  const tMO    = custos.filter(c=>c.cat==="Mão de obra").reduce((a,c)=>a+parseFloat(c.valor||0),0);
+  const tMat   = custos.filter(c=>c.cat==="Material").reduce((a,c)=>a+parseFloat(c.valor||0),0);
+  const tOut   = custos.filter(c=>c.cat!=="Mão de obra"&&c.cat!=="Material").reduce((a,c)=>a+parseFloat(c.valor||0),0);
+  const pMO    = prev>0?Math.round(tMO/prev*100):0;
+  const pMat   = prev>0?Math.round(tMat/prev*100):0;
+  const pOut   = prev>0?Math.round(tOut/prev*100):0;
+  const form   = state.custoForm;
+
+  return `<div style="display:flex;flex-direction:column;gap:12px">
+    ${prev>0?`
+    <!-- Resumo -->
+    <div style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:16px">
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <div style="flex:1;background:#F9FAFB;border-radius:10px;padding:10px 12px;text-align:center"><div style="font-size:11px;color:#9CA3AF;text-transform:uppercase;font-weight:700">Previsto</div><div style="font-size:16px;font-weight:900;color:#374151">${fmt(prev)}</div></div>
+        <div style="flex:1;background:#F9FAFB;border-radius:10px;padding:10px 12px;text-align:center"><div style="font-size:11px;color:#9CA3AF;text-transform:uppercase;font-weight:700">Realizado</div><div style="font-size:16px;font-weight:900;color:${total>prev?"#DC2626":"#F59E0B"}">${fmt(total)}</div></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <div style="flex:1;background:#F0FDF4;border:1px solid #A7F3D0;border-radius:10px;padding:8px 12px;text-align:center"><div style="font-size:11px;color:#065F46;font-weight:700">✅ Pago</div><div style="font-size:15px;font-weight:900;color:#059669">${fmt(tPago)}</div></div>
+        <div style="flex:1;background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:8px 12px;text-align:center"><div style="font-size:11px;color:#92400E;font-weight:700">⏳ Pendente</div><div style="font-size:15px;font-weight:900;color:#F59E0B">${fmt(tPend)}</div></div>
+      </div>
+      ${bar(prev>0?Math.round(total/prev*100):0, 8, total>prev?"#F87171":"#34D399")}
+      <div style="font-size:12px;color:${prev-total>=0?"#059669":"#DC2626"};font-weight:700;margin-top:6px">
+        ${prev-total>=0?`✅ Saldo: ${fmt(prev-total)}`:`⚠️ Acima do orçamento: ${fmt(total-prev)}`}
+      </div>
+    </div>
+    <!-- Análise -->
+    <div style="background:#F5F7FF;border-radius:14px;border:1px solid #E0E7FF;padding:16px">
+      <div style="font-weight:800;font-size:14px;color:#1F2937;margin-bottom:4px">📊 Análise Orçamentária</div>
+      <div style="font-size:12px;color:#6B7280;margin-bottom:14px">Faixas esperadas para obras de <b>${fmt(prev)}</b></div>
+      <!-- MO -->
+      <div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span style="font-size:13px;font-weight:700;color:#374151">👷 Mão de obra</span>
+          <div style="display:flex;gap:6px;align-items:center"><span style="font-size:11px;color:#6B7280">Esperado: 35–40%</span><span style="font-size:13px;font-weight:900;color:${pMO>40?"#DC2626":pMO>=35?"#059669":"#F59E0B"}">${pMO}%</span></div>
+        </div>
+        <div style="position:relative;height:14px;background:#E5E7EB;border-radius:99px;overflow:hidden;margin-bottom:4px">
+          <div style="position:absolute;left:35%;width:5%;height:100%;background:#BBF7D0;opacity:.8"></div>
+          <div style="position:absolute;left:0;width:${Math.min(pMO,100)}%;height:100%;background:${pMO>40?"#F87171":pMO>=35?"#34D399":"#FCD34D"};border-radius:99px"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:#9CA3AF">
+          <span>Realizado: <b style="color:#374151">${fmt(tMO)}</b></span>
+          <span>Ideal: <b style="color:#059669">${fmt(prev*0.35)} – ${fmt(prev*0.40)}</b></span>
+        </div>
+      </div>
+      <!-- Material -->
+      <div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span style="font-size:13px;font-weight:700;color:#374151">🧱 Material</span>
+          <div style="display:flex;gap:6px;align-items:center"><span style="font-size:11px;color:#6B7280">Esperado: 55–60%</span><span style="font-size:13px;font-weight:900;color:${pMat>60?"#DC2626":pMat>=55?"#059669":"#F59E0B"}">${pMat}%</span></div>
+        </div>
+        <div style="position:relative;height:14px;background:#E5E7EB;border-radius:99px;overflow:hidden;margin-bottom:4px">
+          <div style="position:absolute;left:55%;width:5%;height:100%;background:#BBF7D0;opacity:.8"></div>
+          <div style="position:absolute;left:0;width:${Math.min(pMat,100)}%;height:100%;background:${pMat>60?"#F87171":pMat>=55?"#34D399":"#FCD34D"};border-radius:99px"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:#9CA3AF">
+          <span>Realizado: <b style="color:#374151">${fmt(tMat)}</b></span>
+          <span>Ideal: <b style="color:#059669">${fmt(prev*0.55)} – ${fmt(prev*0.60)}</b></span>
+        </div>
+      </div>
+      ${tOut>0?`<div style="margin-bottom:6px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-size:13px;font-weight:700;color:#374151">📦 Outros</span><span style="font-size:13px;font-weight:900;color:#6B7280">${pOut}%</span></div>
+        ${bar(Math.min(pOut,100), 10, "#A5B4FC")}
+        <div style="font-size:11px;color:#9CA3AF;margin-top:2px">Realizado: <b style="color:#374151">${fmt(tOut)}</b></div>
+      </div>`:""}
+    </div>
+    <!-- Fases -->
+    <div style="background:#F5F7FF;border-radius:14px;border:1px solid #E0E7FF;padding:16px">
+      <div style="font-weight:800;font-size:14px;color:#1F2937;margin-bottom:4px">🏗️ Custo por Fase</div>
+      <div style="font-size:12px;color:#6B7280;margin-bottom:12px">Baseado em <b>${fmt(prev)}</b></div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${FASES_OBRA.map(f=>{
+          const est=f.pct?prev*f.pct:null;
+          const gasto=custos.filter(c=>c.fase===f.nome).reduce((a,c)=>a+parseFloat(c.valor||0),0);
+          const pG=est?Math.round(gasto/est*100):0;
+          return `<div style="background:#fff;border-radius:10px;padding:10px 12px;border:1px solid #E5E7EB">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span style="font-size:12px;font-weight:800;color:#6366F1;flex-shrink:0">#${f.id}</span>
+                  <span style="font-size:13px;font-weight:700;color:#1F2937;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.nome}</span>
+                </div>
+                <div style="font-size:11px;color:#9CA3AF;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.escopo}</div>
+              </div>
+              <div style="text-align:right;flex-shrink:0">
+                ${est?`<div style="font-size:13px;font-weight:900;color:#6366F1">${fmt(est)}</div>`:`<div style="font-size:11px;color:#9CA3AF;font-style:italic">variável</div>`}
+                <div style="font-size:10px;color:#9CA3AF">${f.pct?(f.pct*100).toFixed(1)+"% da obra":"consultar"}</div>
+              </div>
+            </div>
+            ${est&&gasto>0?`
+              <div style="margin-top:6px">
+                <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+                  <span style="color:#6B7280">Lançado: <b style="color:${gasto>est?"#DC2626":"#059669"}">${fmt(gasto)}</b></span>
+                  <span style="color:${gasto>est?"#DC2626":pG>80?"#F59E0B":"#059669"};font-weight:700">${pG}% utilizado</span>
+                </div>
+                ${bar(pG, 5, gasto>est?"#F87171":pG>80?"#FCD34D":"#34D399")}
+                ${gasto>est?`<div style="font-size:11px;color:#DC2626;font-weight:700;margin-top:4px">⚠️ Acima em ${fmt(gasto-est)}</div>`:""}
+              </div>`:""}
+            ${est&&gasto===0?`<div style="font-size:11px;color:#9CA3AF;margin-top:4px">Nenhum custo lançado</div>`:""}
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`:""}
+
+    <!-- Botões -->
+    <div style="display:flex;gap:8px">
+      <button onclick="abrirCustoForm()" style="flex:1;padding:12px;border-radius:10px;border:none;background:#F59E0B;color:#fff;font-weight:700;font-size:14px;cursor:pointer">+ Novo Lançamento</button>
+      <button onclick="abrirScanner()" style="flex:1;padding:12px;border-radius:10px;border:1px solid #E5E7EB;background:transparent;color:#6B7280;font-weight:700;font-size:14px;cursor:pointer">📷 Escanear Nota</button>
+    </div>
+
+    <!-- Scanner -->
+    ${state.showScanner?`
+    <div style="background:#fff;border-radius:14px;border:2px solid #F59E0B;padding:16px">
+      <div style="font-weight:800;font-size:15px;color:#1F2937;margin-bottom:4px">📷 Scanner de Cupom Fiscal</div>
+      <div style="font-size:12px;color:#6B7280;margin-bottom:14px">Tire uma foto — a IA extrai os dados automaticamente.</div>
+      ${state.scanLoading?`<div style="text-align:center;padding:24px 0"><div class="spin" style="font-size:36px;margin-bottom:10px">🔍</div><div style="font-weight:700;font-size:14px;color:#1F2937">Analisando cupom...</div></div>`:`
+      <div onclick="document.getElementById('cam-input').click()" style="border:2px dashed #FDE68A;border-radius:12px;padding:28px 16px;text-align:center;cursor:pointer;background:#FEFCE8;margin-bottom:10px">
+        <div style="font-size:44px;margin-bottom:6px">📄</div>
+        <div style="font-weight:700;font-size:14px;color:#92400E">Toque para tirar foto</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <button onclick="document.getElementById('cam-input').click()" style="flex:1;padding:10px;border-radius:10px;border:none;background:#F59E0B;color:#fff;font-weight:700;cursor:pointer">📷 Câmera</button>
+        <button onclick="document.getElementById('gal-input').click()" style="flex:1;padding:10px;border-radius:10px;border:1px solid #E5E7EB;background:transparent;color:#6B7280;font-weight:700;cursor:pointer">🖼️ Galeria</button>
+      </div>
+      <input id="cam-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="processarScan(event)"/>
+      <input id="gal-input" type="file" accept="image/*" style="display:none" onchange="processarScan(event)"/>
+      <button onclick="setState({showScanner:false,scanErro:''})" style="width:100%;padding:10px;border-radius:10px;border:1px solid #E5E7EB;background:transparent;color:#6B7280;font-weight:700;cursor:pointer">Cancelar</button>`}
+      ${state.scanErro?`<div style="background:#FFF5F5;border:1px solid #FCA5A5;border-radius:10px;padding:12px;margin-top:10px"><div style="font-weight:700;color:#DC2626;font-size:13px">⚠️ ${state.scanErro}</div></div>`:""}
+    </div>`:""}
+
+    <!-- Form lançamento -->
+    ${form?`
+    <div style="background:#fff;border-radius:14px;border:1px solid #FDE68A;padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-weight:800;font-size:15px">${state.scanItens?"✅ Dados do Scanner":"Novo Lançamento"}</div>
+        ${state.scanConfianca?`<span style="font-size:11px;padding:3px 10px;border-radius:20px;font-weight:700;background:${state.scanConfianca==="alta"?"#D1FAE5":state.scanConfianca==="media"?"#FEF3C7":"#FEE2E2"};color:${state.scanConfianca==="alta"?"#065F46":state.scanConfianca==="media"?"#92400E":"#991B1B"}">${state.scanConfianca==="alta"?"✅ Alta":"⚡ Média"} confiança</span>`:""}
+      </div>
+      ${state.scanItens&&state.scanItens.length>0?`<div style="background:#F9FAFB;border-radius:10px;padding:8px 12px;margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Itens detectados</div>${state.scanItens.map(it=>`<div style="font-size:12px;color:#374151;padding:2px 0">• ${it}</div>`).join("")}</div>`:""}
+      <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Descrição *</div><input id="custo-desc" value="${state.custoDesc||""}" oninput="state.custoDesc=this.value" placeholder="Ex: Concreto FCK 25" style="width:100%;padding:9px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box;background:#FAFAFA"/></div>
+      <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Fase da obra</div>
+        <select id="custo-fase" onchange="state.custoFase=this.value" style="width:100%;padding:9px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;outline:none;background:#FAFAFA;box-sizing:border-box">
+          <option value="">Selecione a fase (opcional)</option>
+          ${FASES_OBRA.map(f=>`<option value="${f.nome}" ${state.custoFase===f.nome?"selected":""}>  #${f.id} ${f.nome}${f.pct?" ("+(f.pct*100).toFixed(1)+"%)":""}</option>`).join("")}
+        </select>
+      </div>
+      <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:6px;text-transform:uppercase">Categoria</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${CATS.map(c=>`<button onclick="state.custoCat='${c}';reRenderAbaContent()" style="font-size:12px;padding:5px 12px;border-radius:20px;border:${(state.custoCat||"Material")===c?"2px solid #F59E0B":"1px solid #E5E7EB"};background:${(state.custoCat||"Material")===c?"#FEF3C7":"#F9FAFB"};cursor:pointer;font-weight:600">${CAT_IC[c]} ${c}</button>`).join("")}
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Valor (R$) *</div><input id="custo-valor" type="number" value="${state.custoValor||""}" oninput="state.custoValor=this.value" placeholder="0,00" style="width:100%;padding:9px 12px;border:2px solid #F59E0B;border-radius:10px;font-size:16px;outline:none;box-sizing:border-box;background:#FEFCE8;font-weight:800;color:#F59E0B"/></div>
+        <div><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Data</div><input id="custo-data" type="date" value="${state.custoData||today()}" oninput="state.custoData=this.value" style="width:100%;padding:9px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box;background:#FAFAFA"/></div>
+      </div>
+      <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Fornecedor</div><input id="custo-forn" value="${state.custoForn||""}" oninput="state.custoForn=this.value" placeholder="Nome do fornecedor" style="width:100%;padding:9px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box;background:#FAFAFA"/></div>
+      <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:6px;text-transform:uppercase">Status do pagamento</div>
+        <div style="display:flex;gap:8px">
+          <button onclick="state.custoPago=true;reRenderAbaContent()" style="flex:1;padding:9px 0;border-radius:10px;border:${state.custoPago!==false?"2px solid #059669":"1px solid #E5E7EB"};background:${state.custoPago!==false?"#D1FAE5":"#F9FAFB"};color:${state.custoPago!==false?"#065F46":"#6B7280"};font-weight:700;font-size:13px;cursor:pointer">✅ Pago</button>
+          <button onclick="state.custoPago=false;reRenderAbaContent()" style="flex:1;padding:9px 0;border-radius:10px;border:${state.custoPago===false?"2px solid #F59E0B":"1px solid #E5E7EB"};background:${state.custoPago===false?"#FEF3C7":"#F9FAFB"};color:${state.custoPago===false?"#92400E":"#6B7280"};font-weight:700;font-size:13px;cursor:pointer">⏳ Pendente</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="fecharCustoForm()" style="flex:1;padding:10px;border-radius:10px;border:1px solid #E5E7EB;background:transparent;color:#6B7280;font-weight:700;cursor:pointer">Cancelar</button>
+        <button onclick="salvarCusto()" style="flex:1;padding:10px;border-radius:10px;border:none;background:#F59E0B;color:#fff;font-weight:700;cursor:pointer">💾 Salvar</button>
+      </div>
+    </div>`:""}
+
+    <!-- Lista custos -->
+    ${custos.length===0&&!form&&!state.showScanner?`<div style="text-align:center;padding:24px 0;color:#9CA3AF">Nenhum custo lançado ainda.</div>`:""}
+    ${custos.map(c=>`
+      <div style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:16px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:36px;height:36px;border-radius:10px;background:#FEF3C7;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${CAT_IC[c.cat]||"📦"}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.desc}</div>
+            <div style="font-size:11px;color:#9CA3AF">${c.fornecedor||"—"} · ${fmtD(c.data)}</div>
+            ${c.fase?`<div style="font-size:11px;color:#6366F1;font-weight:600;margin-top:2px">🏗️ ${c.fase}</div>`:""}
+            <button onclick="togglePagoCusto('${c.id}')" style="font-size:11px;padding:2px 8px;border-radius:8px;border:none;background:${c.pago!==false?"#D1FAE5":"#FEF3C7"};color:${c.pago!==false?"#065F46":"#92400E"};font-weight:700;cursor:pointer;margin-top:4px">${c.pago!==false?"✅ Pago":"⏳ Pendente"}</button>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-weight:900;font-size:15px;color:#F59E0B">${fmt(c.valor)}</div>
+            <button onclick="deletarCusto('${c.id}')" style="background:transparent;border:none;cursor:pointer;font-size:16px">🗑️</button>
+          </div>
+        </div>
+      </div>`).join("")}
+  </div>`;
+}
+
+// ── Prestadores ───────────────────────────────────────────────────────────────
+function buildPrestadores() {
+  const view = state.viewPrest;
+  if(view==="form_prest") return buildFormPrest();
+  if(view==="form_diaria") return buildFormDiaria();
+  if(view==="detalhe"&&state.selPrest) return buildDetalhePrest();
+  return buildListaPrest();
+}
+
+function buildFormPrest() {
+  return `<div style="padding-bottom:80px">
+    <button onclick="setState({viewPrest:'lista'})" style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:10px;padding:8px 14px;cursor:pointer;font-weight:700;color:#374151;margin-bottom:16px;font-size:14px">← Voltar</button>
+    <div style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:16px">
+      <div style="font-weight:800;font-size:16px;color:#1F2937;margin-bottom:16px">👷 Novo Prestador</div>
+      <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Nome completo *</div><input id="prest-nome" placeholder="Ex: Carlos Pereira" style="width:100%;padding:9px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box;background:#FAFAFA"/></div>
+      <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Função</div>
+        <select id="prest-funcao" style="width:100%;padding:9px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;outline:none;background:#FAFAFA;box-sizing:border-box">
+          ${FUNCOES.map(f=>`<option>${f}</option>`).join("")}
+        </select>
+      </div>
+      <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Valor da diária (R$)</div><input id="prest-diaria" type="number" placeholder="Ex: 180" style="width:100%;padding:9px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box;background:#FAFAFA"/></div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button onclick="setState({viewPrest:'lista'})" style="flex:1;padding:10px;border-radius:10px;border:1px solid #E5E7EB;background:transparent;color:#6B7280;font-weight:700;cursor:pointer">Cancelar</button>
+        <button onclick="salvarPrestador()" style="flex:1;padding:10px;border-radius:10px;border:none;background:#F59E0B;color:#fff;font-weight:700;cursor:pointer">Salvar</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function buildFormDiaria() {
+  const ps  = state.prestadores.find(p=>p.id===state.fDPrestId);
+  const vp  = state.fDOc==="Trabalhou"?(ps?.diaria||0):state.fDOc==="Meio período"?(ps?.diaria||0)/2:0;
+  return `<div style="padding-bottom:80px">
+    <button onclick="setState({viewPrest:state.selPrest?'detalhe':'lista'})" style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:10px;padding:8px 14px;cursor:pointer;font-weight:700;color:#374151;margin-bottom:16px;font-size:14px">← Voltar</button>
+    <div style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:16px">
+      <div style="font-weight:800;font-size:16px;color:#1F2937;margin-bottom:16px">📋 Registrar Diária</div>
+      <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Prestador</div>
+        <select id="fd-prest" onchange="state.fDPrestId=this.value;reRenderPrest()" style="width:100%;padding:9px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;outline:none;background:#FAFAFA;box-sizing:border-box">
+          <option value="">Selecione...</option>
+          ${state.prestadores.map(p=>`<option value="${p.id}" ${state.fDPrestId===p.id?"selected":""}>${p.nome} — ${p.funcao}</option>`).join("")}
+        </select>
+      </div>
+      <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Obra</div>
+        <select id="fd-obra" onchange="state.fDObraId=this.value" style="width:100%;padding:9px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;outline:none;background:#FAFAFA;box-sizing:border-box">
+          <option value="">Selecione...</option>
+          ${state.obras.map(o=>`<option value="${o.id}" ${state.fDObraId===o.id?"selected":""}>${o.nome}</option>`).join("")}
+        </select>
+      </div>
+      <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Data</div><input id="fd-data" type="date" value="${state.fDData||today()}" onchange="state.fDData=this.value" style="width:100%;padding:9px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box;background:#FAFAFA"/></div>
+      <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:6px;text-transform:uppercase">Ocorrência</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${OCORR.map(oc=>`<button onclick="state.fDOc='${oc}';reRenderPrest()" style="font-size:12px;padding:6px 12px;border-radius:20px;border:${(state.fDOc||"Trabalhou")===oc?"2px solid #F59E0B":"1px solid #E5E7EB"};background:${(state.fDOc||"Trabalhou")===oc?"#FEF3C7":"#F9FAFB"};cursor:pointer;font-weight:600">${OC_I[oc]} ${oc}</button>`).join("")}
+        </div>
+      </div>
+      <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Observação</div><textarea id="fd-obs" rows="2" placeholder="Ex: Trabalhou na fundação..." onchange="state.fDObs=this.value" style="width:100%;padding:10px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;resize:none;box-sizing:border-box">${state.fDObs||""}</textarea></div>
+      <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:6px;text-transform:uppercase">Pagamento</div>
+        <div style="display:flex;gap:8px">
+          <button onclick="state.fDPago=true;reRenderPrest()" style="flex:1;padding:9px 0;border-radius:10px;border:${state.fDPago!==false?"2px solid #059669":"1px solid #E5E7EB"};background:${state.fDPago!==false?"#D1FAE5":"#F9FAFB"};color:${state.fDPago!==false?"#065F46":"#6B7280"};font-weight:700;font-size:13px;cursor:pointer">✅ Pago</button>
+          <button onclick="state.fDPago=false;reRenderPrest()" style="flex:1;padding:9px 0;border-radius:10px;border:${state.fDPago===false?"2px solid #F59E0B":"1px solid #E5E7EB"};background:${state.fDPago===false?"#FEF3C7":"#F9FAFB"};color:${state.fDPago===false?"#92400E":"#6B7280"};font-weight:700;font-size:13px;cursor:pointer">⏳ Pendente</button>
+        </div>
+      </div>
+      ${ps&&vp>0?`<div style="background:#F0FDF4;border:1px solid #A7F3D0;border-radius:10px;padding:10px;margin-bottom:12px;font-size:13px;color:#065F46;font-weight:700">💰 Será lançado: ${fmt(vp)} nos custos da obra</div>`:""}
+      <div style="display:flex;gap:8px">
+        <button onclick="setState({viewPrest:state.selPrest?'detalhe':'lista'})" style="flex:1;padding:10px;border-radius:10px;border:1px solid #E5E7EB;background:transparent;color:#6B7280;font-weight:700;cursor:pointer">Cancelar</button>
+        <button onclick="salvarDiaria()" style="flex:1;padding:10px;border-radius:10px;border:none;background:#F59E0B;color:#fff;font-weight:700;cursor:pointer">Salvar</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function buildDetalhePrest() {
+  const p      = state.selPrest;
+  const todas  = state.diarias.filter(d=>d.prestId===p.id).sort((a,b)=>(b.data||"").localeCompare(a.data||""));
+  const mes    = state.mes;
+  const dmes   = todas.filter(d=>d.data?.slice(0,7)===mes);
+  const meses  = [...new Set(todas.map(d=>d.data?.slice(0,7)).filter(Boolean))].sort().reverse();
+  const tPago  = todas.filter(d=>d.pago!==false).reduce((a,d)=>a+parseFloat(d.valor||0),0);
+  const tPend  = todas.filter(d=>d.pago===false).reduce((a,d)=>a+parseFloat(d.valor||0),0);
+  const tTrab  = todas.filter(d=>d.oc==="Trabalhou").length;
+  const tFalta = todas.filter(d=>d.oc==="Falta").length;
+
+  return `<div style="padding-bottom:80px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <button onclick="setState({viewPrest:'lista',selPrest:null})" style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:10px;padding:8px 12px;cursor:pointer;font-weight:700;color:#374151">← Voltar</button>
+      <div style="flex:1"><div style="font-weight:800;font-size:16px">${p.nome}</div><div style="font-size:12px;color:#6B7280">${p.funcao} · ${fmt(p.diaria)}/dia</div></div>
+      <button onclick="setState({viewPrest:'form_diaria',fDPrestId:'${p.id}',fDOc:'Trabalhou',fDPago:true})" style="background:#F59E0B;color:#fff;border:none;border-radius:10px;padding:8px 14px;font-weight:700;font-size:13px;cursor:pointer">+ Diária</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      ${[["💰 Total pago",fmt(tPago),"#059669"],["⏳ Pendente",fmt(tPend),"#F59E0B"],["✅ Dias trabalhados",tTrab,"#374151"],["❌ Faltas",tFalta,"#DC2626"]].map(([lb,v,c])=>`
+        <div style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:10px;text-align:center">
+          <div style="font-size:11px;color:#9CA3AF">${lb}</div>
+          <div style="font-weight:900;font-size:15px;color:${c}">${v}</div>
+        </div>`).join("")}
+    </div>
+    <div style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:14px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-weight:700;font-size:13px">Filtrar por mês</div>
+        <input type="month" value="${mes}" onchange="setState({mes:this.value})" style="padding:4px 8px;border:1px solid #E5E7EB;border-radius:8px;font-size:13px;outline:none"/>
+      </div>
+      <div style="display:flex;gap:10px;font-size:13px;flex-wrap:wrap">
+        <span>✅ <b>${dmes.filter(d=>d.oc==="Trabalhou").length}</b></span>
+        <span>⏱️ <b>${dmes.filter(d=>d.oc==="Meio período").length}</b></span>
+        <span>❌ <b>${dmes.filter(d=>d.oc==="Falta").length}</b></span>
+        <span style="color:#059669;font-weight:700">Pago: ${fmt(dmes.filter(d=>d.pago!==false).reduce((a,d)=>a+parseFloat(d.valor||0),0))}</span>
+        ${dmes.some(d=>d.pago===false)?`<span style="color:#F59E0B;font-weight:700">Pend: ${fmt(dmes.filter(d=>d.pago===false).reduce((a,d)=>a+parseFloat(d.valor||0),0))}</span>`:""}
+      </div>
+    </div>
+    ${todas.length===0?`<div style="text-align:center;padding:32px 0;color:#9CA3AF">Nenhuma diária ainda.</div>`:""}
+    ${meses.map(m=>{
+      const regs=todas.filter(d=>d.data?.slice(0,7)===m);
+      const [ano,mm]=m.split("-");
+      const nm=new Date(ano,mm-1,1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+      return `<div style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+          <div style="font-weight:700;font-size:13px;color:#6B7280;text-transform:capitalize">${nm}</div>
+          <div style="font-weight:800;font-size:13px;color:#F59E0B">${fmt(regs.reduce((a,d)=>a+parseFloat(d.valor||0),0))}</div>
+        </div>
+        ${regs.map(d=>{
+          const ob=state.obras.find(o=>o.id===d.obraId);
+          return `<div style="background:#fff;border-radius:14px;border-left:3px solid ${OC_C[d.oc]||"#E5E7EB"};padding:12px 14px;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+              <div>
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+                  <span style="font-size:16px">${OC_I[d.oc]}</span>
+                  <span style="font-weight:700;font-size:13px">${fmtD(d.data)}</span>
+                  <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:${(OC_C[d.oc]||"#9CA3AF")}22;color:${OC_C[d.oc]||"#9CA3AF"};font-weight:700">${d.oc}</span>
+                </div>
+                <div style="font-size:12px;color:#6B7280">🏗️ ${ob?.nome||"—"}</div>
+                ${d.obs?`<div style="font-size:11px;color:#9CA3AF;margin-top:2px">📝 ${d.obs}</div>`:""}
+                <button onclick="togglePagoDiaria('${d.id}')" style="font-size:11px;padding:2px 8px;border-radius:8px;border:none;background:${d.pago!==false?"#D1FAE5":"#FEF3C7"};color:${d.pago!==false?"#065F46":"#92400E"};font-weight:700;cursor:pointer;margin-top:4px">${d.pago!==false?"✅ Pago":"⏳ Pendente"}</button>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+                ${d.valor>0?`<div style="font-weight:900;font-size:14px;color:#F59E0B">${fmt(d.valor)}</div>`:""}
+                <button onclick="deletarDiaria('${d.id}')" style="background:transparent;border:none;cursor:pointer;font-size:16px">🗑️</button>
+              </div>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+
+function buildListaPrest() {
+  const prest   = state.prestadores;
+  const diarias = state.diarias;
+  const mes     = state.mes;
+  return `<div style="padding-bottom:80px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div><div style="font-weight:800;font-size:20px;color:#1F2937">Equipe</div><div style="font-size:12px;color:#9CA3AF">${prest.length} prestador(es)</div></div>
+      <div style="display:flex;gap:8px">
+        <button onclick="setState({viewPrest:'form_diaria',fDOc:'Trabalhou',fDPago:true,fDPrestId:'',fDObraId:''})" style="background:transparent;color:#6B7280;border:1px solid #E5E7EB;border-radius:10px;padding:7px 12px;font-weight:700;font-size:12px;cursor:pointer">+ Diária</button>
+        <button onclick="setState({viewPrest:'form_prest'})" style="background:#F59E0B;color:#fff;border:none;border-radius:10px;padding:7px 12px;font-weight:700;font-size:12px;cursor:pointer">+ Prestador</button>
+      </div>
+    </div>
+    <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:14px;padding:14px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-weight:700;font-size:13px;color:#92400E">📅 Resumo do mês</div>
+        <input type="month" value="${mes}" onchange="setState({mes:this.value})" style="padding:4px 8px;border:1px solid #FDE68A;border-radius:8px;font-size:13px;outline:none;background:transparent"/>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="background:#fff;border-radius:10px;padding:8px 12px"><div style="font-size:11px;color:#9CA3AF">✅ Total pago</div><div style="font-weight:900;font-size:18px;color:#059669">${fmt(diarias.filter(d=>d.data?.slice(0,7)===mes&&d.pago!==false).reduce((a,d)=>a+parseFloat(d.valor||0),0))}</div></div>
+        <div style="background:#fff;border-radius:10px;padding:8px 12px"><div style="font-size:11px;color:#9CA3AF">⏳ Pendente</div><div style="font-weight:900;font-size:18px;color:#F59E0B">${fmt(diarias.filter(d=>d.data?.slice(0,7)===mes&&d.pago===false).reduce((a,d)=>a+parseFloat(d.valor||0),0))}</div></div>
+      </div>
+    </div>
+    ${prest.length===0?`<div style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:40px;text-align:center"><div style="font-size:48px;margin-bottom:12px">👷</div><div style="font-weight:800;font-size:16px;color:#374151;margin-bottom:16px">Nenhum prestador cadastrado</div><button onclick="setState({viewPrest:'form_prest'})" style="background:#F59E0B;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-weight:700;cursor:pointer">+ Adicionar prestador</button></div>`:""}
+    <div style="display:flex;flex-direction:column;gap:10px">
+      ${prest.map(p=>{
+        const dmes=diarias.filter(d=>d.prestId===p.id&&d.data?.slice(0,7)===mes);
+        const trab=dmes.filter(d=>d.oc==="Trabalhou").length;
+        const falt=dmes.filter(d=>d.oc==="Falta").length;
+        const pgM=dmes.filter(d=>d.pago!==false).reduce((a,d)=>a+parseFloat(d.valor||0),0);
+        const pdM=dmes.filter(d=>d.pago===false).reduce((a,d)=>a+parseFloat(d.valor||0),0);
+        return `<div onclick="setState({viewPrest:'detalhe',selPrest:${JSON.stringify(p)}})" style="background:#fff;border-radius:14px;border:1px solid #F3F4F6;padding:16px;cursor:pointer">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+            <div style="width:44px;height:44px;border-radius:50%;background:#FEF3C7;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">👷</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:800;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.nome}</div>
+              <div style="font-size:12px;color:#6B7280">${p.funcao} · <span style="color:#F59E0B;font-weight:700">${fmt(p.diaria)}/dia</span></div>
+            </div>
+            <div style="display:flex;gap:4px;align-items:center">
+              <button onclick="event.stopPropagation();confirmarDeletarPrest('${p.id}','${p.nome.replace(/'/g,"\\'")}')" style="background:transparent;border:none;cursor:pointer;font-size:16px">🗑️</button>
+              <span style="color:#D1D5DB">›</span>
+            </div>
+          </div>
+          <div style="background:#F9FAFB;border-radius:10px;padding:8px 12px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div style="font-size:12px;color:#6B7280"><span style="margin-right:10px">✅ <b>${trab}</b></span><span>❌ <b>${falt}</b></span></div>
+              <div style="text-align:right">
+                ${pgM>0?`<div style="font-weight:900;font-size:13px;color:#059669">${fmt(pgM)} pago</div>`:""}
+                ${pdM>0?`<div style="font-weight:700;font-size:12px;color:#F59E0B">${fmt(pdM)} pendente</div>`:""}
+              </div>
+            </div>
+          </div>
+        </div>`;
+      }).join("")}
+    </div>
+  </div>`;
+}
+
+function buildSelecionarObra() {
+  return `<div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:#9CA3AF;margin-bottom:4px">Selecione a obra</div>
+      <select onchange="selObra(this.value)" style="padding:10px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;width:100%;background:#FAFAFA;outline:none">
+        <option value="">Escolha uma obra...</option>
+        ${state.obras.map(o=>`<option value="${o.id}">${o.nome} — ${o.cliente}</option>`).join("")}
+      </select>
+    </div>
+  </div>`;
+}
+
+// ── Obra Form ─────────────────────────────────────────────────────────────────
+function buildObraForm() {
+  const f = state.formObra;
+  const THUMBS = ["🏠","🏢","🏡","🏗️","🏖️","🏬","🏭","🏛️"];
+  return `
+    <div onclick="setState({formObra:null})" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;display:flex;align-items:flex-end;justify-content:center">
+      <div onclick="event.stopPropagation()" style="background:#fff;border-radius:20px 20px 0 0;padding:24px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <div style="font-weight:800;font-size:18px;color:#1F2937">${f.id?"Editar Obra":"Nova Obra"}</div>
+          <button onclick="setState({formObra:null})" style="background:transparent;border:none;cursor:pointer;font-size:18px;color:#6B7280">✕</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          ${THUMBS.map(t=>`<button onclick="state.formObra={...state.formObra,thumb:'${t}'};reRenderForm()" style="font-size:24px;background:${(f.thumb||"🏠")===t?"#FEF3C7":"#F9FAFB"};border:${(f.thumb||"🏠")===t?"2px solid #F59E0B":"1px solid #E5E7EB"};border-radius:10px;padding:6px 10px;cursor:pointer">${t}</button>`).join("")}
+        </div>
+        <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Nome da obra *</div><input id="fo-nome" value="${f.nome||""}" oninput="state.formObra.nome=this.value" style="width:100%;padding:9px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box;background:#FAFAFA"/></div>
+        <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Cliente *</div><input id="fo-cliente" value="${f.cliente||""}" oninput="state.formObra.cliente=this.value" style="width:100%;padding:9px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box;background:#FAFAFA"/></div>
+        <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Endereço</div><input id="fo-end" value="${f.endereco||""}" oninput="state.formObra.endereco=this.value" style="width:100%;padding:9px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box;background:#FAFAFA"/></div>
+        <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Status</div>
+          <select id="fo-status" onchange="state.formObra.status=this.value" style="width:100%;padding:9px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;outline:none;background:#FAFAFA;box-sizing:border-box">
+            ${STATUS_LIST.map(s=>`<option ${(f.status||"Planejamento")===s?"selected":""}>${s}</option>`).join("")}
+          </select>
+        </div>
+        <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Prazo</div><input id="fo-prazo" type="date" value="${f.prazo||""}" oninput="state.formObra.prazo=this.value" style="width:100%;padding:9px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box;background:#FAFAFA"/></div>
+        <div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:4px;text-transform:uppercase">Valor previsto (R$)</div><input id="fo-valor" type="number" value="${f.valorPrevisto||""}" oninput="state.formObra.valorPrevisto=this.value" placeholder="Ex: 320000" style="width:100%;padding:9px 12px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box;background:#FAFAFA"/></div>
+        <div style="display:flex;gap:10px;margin-top:8px">
+          <button onclick="setState({formObra:null})" style="flex:1;padding:10px;border-radius:10px;border:1px solid #E5E7EB;background:transparent;color:#6B7280;font-weight:700;cursor:pointer">Cancelar</button>
+          <button onclick="salvarObra()" style="flex:1;padding:10px;border-radius:10px;border:none;background:#F59E0B;color:#fff;font-weight:700;cursor:pointer">${f.id?"Salvar":"Adicionar obra"}</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── Funções globais ───────────────────────────────────────────────────────────
+window.navTo = p => {
+  if(p!=="obra_det") state.obraSel=null;
+  setState({page:p, viewPrest:"lista"});
+};
+
+window.selObra = async id => {
+  const obra = state.obras.find(o=>o.id===id);
+  if(!obra) return;
+  const [checkData, diarioEntries, custosList] = await Promise.all([
+    fload("check_"+id, {}),
+    fload("diario_"+id, []),
+    fload("custos_"+id, []),
+  ]);
+  setState({page:"obra_det", obraSel:obra, abaDetalhe:"visao", checkData, diarioEntries, custosList});
+};
+
+window.voltarObras = () => setState({page:"obras", obraSel:null});
+
+window.setAbaDetalhe = async aba => {
+  const id = state.obraSel.id;
+  if(aba==="checklist") { const d=await fload("check_"+id,{}); state.checkData=d; }
+  if(aba==="diario")    { const d=await fload("diario_"+id,[]); state.diarioEntries=d; state.diarioForm=false; }
+  if(aba==="custos")    { const d=await fload("custos_"+id,[]); state.custosList=d; state.custoForm=false; state.showScanner=false; }
+  setState({abaDetalhe:aba});
+};
+
+window.reRenderAbaContent = () => {
+  const el = document.getElementById("aba-content");
+  if(el) el.innerHTML = buildAbaContent();
+  attachEvents();
+};
+
+window.reRenderPrest = () => {
+  const el = document.getElementById("app");
+  if(el) { el.innerHTML = buildApp(); attachEvents(); }
+};
+
+window.reRenderForm = () => {
+  const el = document.getElementById("app");
+  if(el) { el.innerHTML = buildApp(); attachEvents(); }
+};
+
+// ── Obras ─────────────────────────────────────────────────────────────────────
+window.abrirFormObra  = () => setState({formObra:{thumb:"🏠",status:"Planejamento"}});
+window.editarObra     = id => { const o=state.obras.find(x=>x.id===id); if(o) setState({formObra:{...o}}); };
+window.confirmarDeletarObra = (id, nome) => { if(confirm(`Apagar "${nome}"?`)) deletarObra(id); };
+window.deletarObra    = async id => {
+  const obras = state.obras.filter(o=>o.id!==id);
+  await fsave("obras", obras);
+  setState({obras, page:"obras", obraSel:null});
+};
+window.concluirObra   = async id => {
+  const obras = state.obras.map(o=>o.id===id?{...o,status:"Finalizada",progresso:100}:o);
+  await fsave("obras", obras);
+  setState({obras});
+};
+window.salvarObra = async () => {
+  const f = state.formObra;
+  const nome = document.getElementById("fo-nome")?.value||f.nome||"";
+  const cliente = document.getElementById("fo-cliente")?.value||f.cliente||"";
+  const endereco = document.getElementById("fo-end")?.value||f.endereco||"";
+  const status = document.getElementById("fo-status")?.value||f.status||"Planejamento";
+  const prazo = document.getElementById("fo-prazo")?.value||f.prazo||"";
+  const valorPrevisto = document.getElementById("fo-valor")?.value||f.valorPrevisto||"";
+  if(!nome||!cliente) return;
+  const novaObra = {...f, nome, cliente, endereco, status, prazo, valorPrevisto, thumb:f.thumb||"🏠"};
+  let obras;
+  if(f.id) {
+    obras = state.obras.map(o=>o.id===f.id?{...o,...novaObra}:o);
+  } else {
+    novaObra.id = uid(); novaObra.custoAtual=0; novaObra.progresso=0;
+    obras = [novaObra, ...state.obras];
+  }
+  await fsave("obras", obras);
+  let newObraSel = state.obraSel;
+  if(f.id && state.obraSel?.id===f.id) newObraSel=obras.find(o=>o.id===f.id);
+  setState({obras, formObra:null, obraSel:newObraSel});
+};
+window.setFiltroObra = f => { state.filtroObra=f; const el=document.getElementById("obras-lista"); if(el){el.innerHTML=buildObrasLista(state.obras);attachEvents();} render(); };
+window.renderObrasLista = () => { state.buscaObra=document.getElementById("busca-obra")?.value||""; const el=document.getElementById("obras-lista"); if(el){el.innerHTML=buildObrasLista(state.obras);attachEvents();} };
+
+// ── Checklist ─────────────────────────────────────────────────────────────────
+window.setCheckItem = async (etapaId, item, val) => {
+  const k = `${etapaId}_${item}`;
+  const newData = {...(state.checkData||{})};
+  if(val===null) delete newData[k]; else newData[k]=val;
+  await fsave("check_"+state.obraSel.id, newData);
+  const apr = Object.values(newData).filter(v=>v==="ok").length;
+  const pct = Math.round(apr/TOTAL_ITENS*100);
+  const obras = state.obras.map(o=>o.id===state.obraSel.id?{...o,progresso:pct}:o);
+  await fsave("obras", obras);
+  setState({checkData:newData, obras, obraSel:{...state.obraSel,progresso:pct}});
+};
+
+// ── Diário ────────────────────────────────────────────────────────────────────
+window.toggleDiarioForm = () => { state.diarioForm=!state.diarioForm; reRenderAbaContent(); };
+window.setDiarioClima   = c => { state.diarioClimasel=c; reRenderAbaContent(); };
+window.salvarDiario = async () => {
+  const servicos = document.getElementById("diario-servicos")?.value||state.diarioServicos||"";
+  if(!servicos.trim()) return;
+  const nova = {id:uid(), data:today(), hora:new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}), clima:state.diarioClimasel||"☀️ Ensolarado", equipe:document.getElementById("diario-equipe")?.value||"", servicos, obs:document.getElementById("diario-obs")?.value||""};
+  const list = [nova,...(state.diarioEntries||[])];
+  await fsave("diario_"+state.obraSel.id, list);
+  state.diarioEntries=list; state.diarioForm=false; state.diarioServicos=""; state.diarioObs=""; state.diarioEquipe="";
+  reRenderAbaContent();
+};
+window.deletarDiario = async id => {
+  if(!confirm("Remover este registro?")) return;
+  const list = (state.diarioEntries||[]).filter(e=>e.id!==id);
+  await fsave("diario_"+state.obraSel.id, list);
+  state.diarioEntries=list; reRenderAbaContent();
+};
+
+// ── Custos ────────────────────────────────────────────────────────────────────
+window.abrirCustoForm = () => { state.custoForm=true; state.custoDesc=""; state.custoCat="Material"; state.custoFase=""; state.custoValor=""; state.custoForn=""; state.custoData=today(); state.custoPago=true; state.scanItens=null; state.scanConfianca=null; reRenderAbaContent(); };
+window.fecharCustoForm= () => { state.custoForm=false; state.showScanner=false; reRenderAbaContent(); };
+window.salvarCusto = async () => {
+  const desc  = document.getElementById("custo-desc")?.value||state.custoDesc||"";
+  const valor = parseFloat(document.getElementById("custo-valor")?.value||state.custoValor||0);
+  const fase  = document.getElementById("custo-fase")?.value||state.custoFase||"";
+  const forn  = document.getElementById("custo-forn")?.value||state.custoForn||"";
+  const data  = document.getElementById("custo-data")?.value||state.custoData||today();
+  if(!desc||!valor) return;
+  const novo = {id:uid(), desc, cat:state.custoCat||"Material", fase, valor, fornecedor:forn, data, pago:state.custoPago!==false};
+  const list = [novo,...(state.custosList||[])];
+  await fsave("custos_"+state.obraSel.id, list);
+  const total = list.reduce((a,c)=>a+parseFloat(c.valor||0),0);
+  const obras = state.obras.map(o=>o.id===state.obraSel.id?{...o,custoAtual:total}:o);
+  await fsave("obras", obras);
+  state.custosList=list; state.obras=obras; state.obraSel={...state.obraSel,custoAtual:total};
+  state.custoForm=false; state.showScanner=false; state.scanItens=null; state.scanConfianca=null;
+  reRenderAbaContent();
+};
+window.togglePagoCusto = async id => {
+  const list = (state.custosList||[]).map(c=>c.id===id?{...c,pago:c.pago===false}:c);
+  await fsave("custos_"+state.obraSel.id, list);
+  state.custosList=list; reRenderAbaContent();
+};
+window.deletarCusto = async id => {
+  if(!confirm("Remover este custo?")) return;
+  const list = (state.custosList||[]).filter(c=>c.id!==id);
+  await fsave("custos_"+state.obraSel.id, list);
+  const total = list.reduce((a,c)=>a+parseFloat(c.valor||0),0);
+  const obras = state.obras.map(o=>o.id===state.obraSel.id?{...o,custoAtual:total}:o);
+  await fsave("obras", obras);
+  state.custosList=list; state.obras=obras; state.obraSel={...state.obraSel,custoAtual:total};
+  reRenderAbaContent();
+};
+
+// ── Scanner ───────────────────────────────────────────────────────────────────
+window.abrirScanner = () => { state.showScanner=true; state.scanErro=""; state.scanLoading=false; reRenderAbaContent(); };
+window.processarScan = async e => {
+  const file = e.target.files[0]; if(!file) return;
+  state.scanLoading=true; state.scanErro=""; reRenderAbaContent();
+  const reader = new FileReader();
+  reader.onload = async ev => {
+    const full=ev.target.result, b64=full.split(",")[1], mtype=full.split(";")[0].split(":")[1];
+    try {
+      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,messages:[{role:"user",content:[{type:"image",source:{type:"base64",media_type:mtype,data:b64}},{type:"text",text:`Analise este cupom fiscal. Retorne SOMENTE JSON válido sem markdown:\n{"descricao":"texto","fornecedor":"texto","valor":0.00,"data":"YYYY-MM-DD","itens":[],"categoria":"Material ou Mão de obra ou Frete ou Equipamentos ou Alimentação ou Outros","fase_sugerida":"nome da fase","confianca":"alta/media/baixa"}\nSe não for fiscal: {"erro":"mensagem"}`}]}]})});
+      const data=await res.json();
+      const text=data.content?.find(b=>b.type==="text")?.text||"";
+      const parsed=JSON.parse(text.replace(/```json|```/g,"").trim());
+      if(parsed.erro){state.scanErro=parsed.erro;state.scanLoading=false;reRenderAbaContent();return;}
+      state.custoDesc=parsed.descricao||"";
+      state.custoCat=CATS.includes(parsed.categoria)?parsed.categoria:"Material";
+      state.custoFase=FASES_OBRA.find(f=>f.nome.toLowerCase().includes((parsed.fase_sugerida||"").toLowerCase()))?.nome||"";
+      state.custoValor=parsed.valor||"";
+      state.custoForn=parsed.fornecedor||"";
+      state.custoData=parsed.data||today();
+      state.custoPago=true;
+      state.scanItens=parsed.itens||[];
+      state.scanConfianca=parsed.confianca||"media";
+      state.showScanner=false; state.scanLoading=false; state.custoForm=true;
+      reRenderAbaContent();
+    } catch(err){state.scanErro="Erro ao processar imagem.";state.scanLoading=false;reRenderAbaContent();}
+  };
+  reader.readAsDataURL(file); e.target.value="";
+};
+
+// ── Prestadores ───────────────────────────────────────────────────────────────
+window.salvarPrestador = async () => {
+  const nome=document.getElementById("prest-nome")?.value||"";
+  const funcao=document.getElementById("prest-funcao")?.value||"Pedreiro";
+  const diaria=parseFloat(document.getElementById("prest-diaria")?.value||0);
+  if(!nome.trim()) return;
+  const novo={id:uid(),nome,funcao,diaria};
+  const prest=[...state.prestadores,novo];
+  await fsave("prestadores",prest);
+  setState({prestadores:prest,viewPrest:"lista"});
+};
+window.confirmarDeletarPrest=(id,nome)=>{if(confirm(`Remover "${nome}"?`))deletarPrest(id);};
+window.deletarPrest=async id=>{
+  const prest=state.prestadores.filter(p=>p.id!==id);
+  await fsave("prestadores",prest);
+  setState({prestadores:prest,viewPrest:"lista",selPrest:null});
+};
+window.salvarDiaria=async()=>{
+  const prestId=document.getElementById("fd-prest")?.value||state.fDPrestId||"";
+  const obraId=document.getElementById("fd-obra")?.value||state.fDObraId||"";
+  const data=document.getElementById("fd-data")?.value||state.fDData||today();
+  const obs=document.getElementById("fd-obs")?.value||state.fDObs||"";
+  const oc=state.fDOc||"Trabalhou";
+  const pago=state.fDPago!==false;
+  if(!prestId||!obraId) return;
+  const p=state.prestadores.find(x=>x.id===prestId);
+  const val=oc==="Trabalhou"?(p?.diaria||0):oc==="Meio período"?(p?.diaria||0)/2:0;
+  const nova={id:uid(),prestId,obraId,data,oc,obs,pago,valor:val,pNome:p?.nome||""};
+  const diarias=[nova,...state.diarias];
+  await fsave("diarias",diarias);
+  if(val>0){
+    const lista=await fload("custos_"+obraId,[]);
+    const nc={id:uid(),desc:`Diária — ${p?.nome}`,cat:"Mão de obra",valor:val,fornecedor:p?.nome||"",data,pago,fase:"Canteiro e despesas gerais"};
+    const nl=[nc,...lista];
+    await fsave("custos_"+obraId,nl);
+    const total=nl.reduce((a,c)=>a+parseFloat(c.valor||0),0);
+    const obras=state.obras.map(o=>o.id===obraId?{...o,custoAtual:total}:o);
+    await fsave("obras",obras);
+    state.obras=obras;
+    if(state.obraSel?.id===obraId){state.obraSel={...state.obraSel,custoAtual:total};state.custosList=nl;}
+  }
+  setState({diarias,viewPrest:state.selPrest?"detalhe":"lista",fDPrestId:"",fDObraId:"",fDOc:"Trabalhou",fDPago:true,fDObs:""});
+};
+window.togglePagoDiaria=async id=>{
+  const diarias=state.diarias.map(d=>d.id===id?{...d,pago:d.pago===false}:d);
+  await fsave("diarias",diarias);
+  state.diarias=diarias;
+  if(state.selPrest) setState({diarias,selPrest:state.selPrest});
+  else setState({diarias});
+};
+window.deletarDiaria=async id=>{
+  if(!confirm("Remover este registro?")) return;
+  const diarias=state.diarias.filter(d=>d.id!==id);
+  await fsave("diarias",diarias);
+  state.diarias=diarias;
+  if(state.selPrest) setState({diarias,selPrest:state.selPrest});
+  else setState({diarias});
+};
+
+function attachEvents() {}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
