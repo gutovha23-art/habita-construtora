@@ -456,14 +456,25 @@ function renderObraDetalhe() {
         <div style="font-size:12px;color:#6B7280">${o.cliente}</div>
       </div>
       ${badge(o.status)}
-      <button class="btn-outline btn-sm" style="width:auto" onclick="abrirEditObra('${o.id}')">✏️</button>
+      <button class="btn-outline btn-sm" style="width:auto" id="btn-edit-obra-det">✏️</button>
     </div>
-    <div class="tab-bar">
-      ${tabs.map(t=>`<button class="tab-btn" onclick="mudarAba('${t.id}')" style="background:${APP.abaAtual===t.id?"#fff":"transparent"};color:${APP.abaAtual===t.id?"#F59E0B":"#6B7280"}">${t.l}</button>`).join("")}
+    <div class="tab-bar" id="tab-bar-obra">
+      ${tabs.map(t=>`<button class="tab-btn" id="tab-${t.id}" style="background:${APP.abaAtual===t.id?"#fff":"transparent"};color:${APP.abaAtual===t.id?"#F59E0B":"#6B7280"}">${t.l}</button>`).join("")}
     </div>
     <div id="aba-content"></div>
   `);
   renderAbaAtual();
+
+  // Eventos das abas — usando addEventListener após renderizar
+  const tabIds = ["visao","checklist","diario","custos"];
+  tabIds.forEach(id => {
+    const btn = qs(`tab-${id}`);
+    if(btn) btn.addEventListener("click", () => mudarAba(id));
+  });
+
+  // Evento botão editar obra no detalhe
+  const btnEdit = qs("btn-edit-obra-det");
+  if(btnEdit) btnEdit.addEventListener("click", () => abrirEditObra(o.id));
 }
 
 function renderAbaAtual() {
@@ -482,11 +493,13 @@ async function mudarAba(aba) {
   if(aba==="checklist") APP.checkData  = await dbLoad("check_"+id,{});
   if(aba==="diario")    { APP.diarioList = await dbLoad("diario_"+id,[]); APP.diarioForm=false; }
   if(aba==="custos")    { APP.custosList = await dbLoad("custos_"+id,[]); APP.custoForm=false; APP.custoImport=false; }
-  // Atualizar tabs
-  document.querySelectorAll(".tab-btn").forEach((btn,i) => {
-    const ids = ["visao","checklist","diario","custos"];
-    btn.style.background = ids[i]===aba ? "#fff" : "transparent";
-    btn.style.color = ids[i]===aba ? "#F59E0B" : "#6B7280";
+  // Atualizar estilo das abas
+  ["visao","checklist","diario","custos"].forEach(tid => {
+    const btn = qs(`tab-${tid}`);
+    if(btn) {
+      btn.style.background = tid===aba ? "#fff" : "transparent";
+      btn.style.color = tid===aba ? "#F59E0B" : "#6B7280";
+    }
   });
   renderAbaAtual();
 }
