@@ -1022,14 +1022,20 @@ window.confirmarImport = async () => {
 
 // ── Prestadores CRUD ──────────────────────────────────────────────────────────
 window.salvarPrestador = async () => {
-  const nome=document.getElementById("p-nome")?.value?.trim()||"";
-  const funcao=document.getElementById("p-funcao")?.value||"Pedreiro";
-  const diaria=parseFloat(document.getElementById("p-diaria")?.value||0);
-  if(!nome){alert("Informe o nome do prestador.");return;}
-  const novo={id:uid(),nome,funcao,diaria};
-  const prest=[...S.prestadores,novo];
-  await fsave("prestadores",prest);
-  set({prestadores:prest,viewPrest:"lista"});
+  const nomeEl = document.getElementById("p-nome");
+  const funcaoEl = document.getElementById("p-funcao");
+  const diariaEl = document.getElementById("p-diaria");
+  const nome = nomeEl ? nomeEl.value.trim() : "";
+  const funcao = funcaoEl ? funcaoEl.value : "Pedreiro";
+  const diaria = parseFloat(diariaEl ? diariaEl.value : 0) || 0;
+  if(!nome){ alert("Informe o nome do prestador."); return; }
+  const novo = { id:uid(), nome, funcao, diaria };
+  const prest = [...S.prestadores, novo];
+  await fsave("prestadores", prest);
+  S.prestadores = prest;
+  S.viewPrest = "lista";
+  S.pNome = ""; S.pFuncao = "Pedreiro"; S.pDiaria = "";
+  render();
 };
 
 window.deletarPrest = async id => {
@@ -1039,30 +1045,39 @@ window.deletarPrest = async id => {
 };
 
 window.salvarDiaria = async () => {
-  const prestId=document.getElementById("fd-prest")?.value||S.fDPrestId||"";
-  const obraId=document.getElementById("fd-obra")?.value||S.fDObraId||"";
-  const data=document.getElementById("fd-data")?.value||S.fDData||today();
-  const obs=document.getElementById("fd-obs")?.value||"";
-  const oc=S.fDOc||"Trabalhou";
-  const pago=S.fDPago!==false;
-  if(!prestId||!obraId){alert("Selecione o prestador e a obra.");return;}
-  const p=S.prestadores.find(x=>x.id===prestId);
-  const val=oc==="Trabalhou"?(p?.diaria||0):oc==="Meio período"?(p?.diaria||0)/2:0;
-  const nova={id:uid(),prestId,obraId,data,oc,obs,pago,valor:val,pNome:p?.nome||""};
-  const diarias=[nova,...S.diarias];
-  await fsave("diarias",diarias);
-  if(val>0){
-    const lista=await fload("custos_"+obraId,[]);
-    const nc={id:uid(),desc:`Diária — ${p?.nome}`,cat:"Mão de obra",valor:val,fornecedor:p?.nome||"",data,pago,fase:"Canteiro e despesas gerais"};
-    const nl=[nc,...lista];
-    await fsave("custos_"+obraId,nl);
-    const total=nl.reduce((a,c)=>a+parseFloat(c.valor||0),0);
-    const obras=S.obras.map(o=>o.id===obraId?{...o,custoAtual:total}:o);
-    await fsave("obras",obras);
-    S.obras=obras;
-    if(S.obraSel?.id===obraId){S.obraSel={...S.obraSel,custoAtual:total};S.custosList=nl;}
+  const prestEl  = document.getElementById("fd-prest");
+  const obraEl   = document.getElementById("fd-obra");
+  const dataEl   = document.getElementById("fd-data");
+  const obsEl    = document.getElementById("fd-obs");
+  const prestId  = prestEl ? prestEl.value : (S.fDPrestId||"");
+  const obraId   = obraEl  ? obraEl.value  : (S.fDObraId||"");
+  const data     = dataEl  ? dataEl.value  : (S.fDData||today());
+  const obs      = obsEl   ? obsEl.value   : "";
+  const oc       = S.fDOc  || "Trabalhou";
+  const pago     = S.fDPago !== false;
+  if(!prestId || !obraId){ alert("Selecione o prestador e a obra."); return; }
+  const p   = S.prestadores.find(x => x.id === prestId);
+  const val = oc==="Trabalhou" ? (p?.diaria||0) : oc==="Meio período" ? (p?.diaria||0)/2 : 0;
+  const nova = { id:uid(), prestId, obraId, data, oc, obs, pago, valor:val, pNome:p?.nome||"" };
+  const diarias = [nova, ...S.diarias];
+  await fsave("diarias", diarias);
+  if(val > 0){
+    const lista = await fload("custos_"+obraId, []);
+    const nc = { id:uid(), desc:`Diária — ${p?.nome}`, cat:"Mão de obra", valor:val, fornecedor:p?.nome||"", data, pago, fase:"Canteiro e despesas gerais" };
+    const nl = [nc, ...lista];
+    await fsave("custos_"+obraId, nl);
+    const total = nl.reduce((a,c) => a+parseFloat(c.valor||0), 0);
+    const obras = S.obras.map(o => o.id===obraId ? {...o, custoAtual:total} : o);
+    await fsave("obras", obras);
+    S.obras = obras;
+    if(S.obraSel?.id === obraId){ S.obraSel = {...S.obraSel, custoAtual:total}; S.custosList = nl; }
   }
-  set({diarias,viewPrest:S.selPrest?"detalhe":"lista",fDPrestId:"",fDObraId:"",fDObs:""});
+  S.diarias    = diarias;
+  S.viewPrest  = S.selPrest ? "detalhe" : "lista";
+  S.fDPrestId  = "";
+  S.fDObraId   = "";
+  S.fDObs      = "";
+  render();
 };
 
 window.togglePagoDiaria = async id => {
