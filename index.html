@@ -613,16 +613,24 @@ async function salvarCheckItem(etapaId, item, status) {
   if(status === null) delete ck[k];
   else ck[k] = status;
   APP.checkData = ck;
-  await dbSave("check_"+APP.obraAtual.id, ck);
 
   // Atualiza o progresso real da obra com base no checklist
   const apr = Object.values(ck).filter(v=>v==="ok").length;
   const progresso = Math.round(apr/TOTAL_CK*100);
   APP.obras = APP.obras.map(o => o.id===APP.obraAtual.id ? {...o,progresso} : o);
   APP.obraAtual = {...APP.obraAtual, progresso};
-  await dbSave("obras", APP.obras);
 
+  // Atualiza a tela imediatamente (otimista) — não espera o Firestore
   renderAbaCheck();
+
+  // Salva no Firestore em segundo plano; se falhar, não trava a interface
+  try {
+    await dbSave("check_"+APP.obraAtual.id, ck);
+    await dbSave("obras", APP.obras);
+  } catch(err) {
+    console.error("Falha ao salvar checklist no Firestore:", err);
+    alert("⚠️ Não foi possível salvar no servidor. Verifique sua conexão e tente novamente.");
+  }
 }
 
 // ── Aba Diário ────────────────────────────────────────────────────────────────
