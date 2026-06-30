@@ -154,6 +154,7 @@ const APP = {
   prestView: "lista", prestAtual: null, prestMes: toDay().slice(0,7),
   diariaOc: "Trabalhou", diariaPago: true,
 };
+window.APP = APP;
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function renderPage() {
@@ -1356,6 +1357,20 @@ qs("btn-backup").addEventListener("click", async () => {
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+window.renderPage = renderPage;
+window.abrirObra = abrirObra;
+window.mudarAba = mudarAba;
+window.abrirFormObra = () => abrirFormObra(null);
+window.abrirEditObra = id => abrirFormObra(APP.obras.find(o=>o.id===id));
+window.concluirObra = async id => {
+  APP.obras = APP.obras.map(o => o.id===id ? {...o,status:"Finalizada",progresso:100} : o);
+  await dbSave("obras", APP.obras);
+  renderObras();
+};
+window.renderObras = renderObras;
+window.renderEquipe = renderEquipe;
+window.renderDetalhePrest = renderDetalhePrest;
+
 async function init() {
   setHTML("main-content",`<div style="text-align:center;padding:60px;color:#9CA3AF"><div class="spin" style="font-size:32px">⏳</div><div style="margin-top:12px">Carregando...</div></div>`);
   const [obras,prest,diarias] = await Promise.all([dbLoad("obras",[]),dbLoad("prestadores",[]),dbLoad("diarias",[])]);
