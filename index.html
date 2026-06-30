@@ -104,7 +104,6 @@ const ST_COLOR = {"Em andamento":["#FEF3C7","#92400E"],"Planejamento":["#DBEAFE"
 const CATS     = ["Material","Mão de obra","Frete","Equipamentos","Alimentação","Outros"];
 const CAT_IC   = {Material:"🧱","Mão de obra":"👷",Frete:"🚚",Equipamentos:"🔧",Alimentação:"🍱",Outros:"📦"};
 const FUNCOES  = ["Pedreiro","Servente","Eletricista","Encanador","Pintor","Carpinteiro","Armador","Mestre de Obras","Outros"];
-const PERIODOS = ["Semanal","Quinzenal","Mensal"];
 const OCORR    = ["Trabalhou","Falta","Feriado","Chuva — sem serviço","Meio período","Atestado"];
 const OC_C     = {"Trabalhou":"#059669","Falta":"#DC2626","Feriado":"#6366F1","Chuva — sem serviço":"#3B82F6","Meio período":"#F59E0B","Atestado":"#9CA3AF"};
 const OC_I     = {"Trabalhou":"✅","Falta":"❌","Feriado":"🏖️","Chuva — sem serviço":"🌧️","Meio período":"⏱️","Atestado":"🏥"};
@@ -154,7 +153,6 @@ const APP = {
   prestView: "lista", prestAtual: null, prestMes: toDay().slice(0,7),
   diariaOc: "Trabalhou", diariaPago: true,
 };
-window.APP = APP;
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function renderPage() {
@@ -458,25 +456,14 @@ function renderObraDetalhe() {
         <div style="font-size:12px;color:#6B7280">${o.cliente}</div>
       </div>
       ${badge(o.status)}
-      <button class="btn-outline btn-sm" style="width:auto" id="btn-edit-obra-det">✏️</button>
+      <button class="btn-outline btn-sm" style="width:auto" onclick="abrirEditObra('${o.id}')">✏️</button>
     </div>
-    <div class="tab-bar" id="tab-bar-obra">
-      ${tabs.map(t=>`<button class="tab-btn" id="tab-${t.id}" style="background:${APP.abaAtual===t.id?"#fff":"transparent"};color:${APP.abaAtual===t.id?"#F59E0B":"#6B7280"}">${t.l}</button>`).join("")}
+    <div class="tab-bar">
+      ${tabs.map(t=>`<button class="tab-btn" onclick="mudarAba('${t.id}')" style="background:${APP.abaAtual===t.id?"#fff":"transparent"};color:${APP.abaAtual===t.id?"#F59E0B":"#6B7280"}">${t.l}</button>`).join("")}
     </div>
     <div id="aba-content"></div>
   `);
   renderAbaAtual();
-
-  // Eventos das abas — usando addEventListener após renderizar
-  const tabIds = ["visao","checklist","diario","custos"];
-  tabIds.forEach(id => {
-    const btn = qs(`tab-${id}`);
-    if(btn) btn.addEventListener("click", () => mudarAba(id));
-  });
-
-  // Evento botão editar obra no detalhe
-  const btnEdit = qs("btn-edit-obra-det");
-  if(btnEdit) btnEdit.addEventListener("click", () => abrirEditObra(o.id));
 }
 
 function renderAbaAtual() {
@@ -495,13 +482,11 @@ async function mudarAba(aba) {
   if(aba==="checklist") APP.checkData  = await dbLoad("check_"+id,{});
   if(aba==="diario")    { APP.diarioList = await dbLoad("diario_"+id,[]); APP.diarioForm=false; }
   if(aba==="custos")    { APP.custosList = await dbLoad("custos_"+id,[]); APP.custoForm=false; APP.custoImport=false; }
-  // Atualizar estilo das abas
-  ["visao","checklist","diario","custos"].forEach(tid => {
-    const btn = qs(`tab-${tid}`);
-    if(btn) {
-      btn.style.background = tid===aba ? "#fff" : "transparent";
-      btn.style.color = tid===aba ? "#F59E0B" : "#6B7280";
-    }
+  // Atualizar tabs
+  document.querySelectorAll(".tab-btn").forEach((btn,i) => {
+    const ids = ["visao","checklist","diario","custos"];
+    btn.style.background = ids[i]===aba ? "#fff" : "transparent";
+    btn.style.color = ids[i]===aba ? "#F59E0B" : "#6B7280";
   });
   renderAbaAtual();
 }
@@ -573,12 +558,10 @@ function renderAbaCheck() {
       ${bar(Math.round(apr/TOTAL_CK*100),6,"#059669")}
       <div style="font-size:11px;text-align:right;color:#059669;font-weight:700;margin-top:4px">${Math.round(apr/TOTAL_CK*100)}% — atualiza o progresso da obra automaticamente</div>
     </div>
-    <div id="etapas-lista"></div>
-  `);
-  setHTML("etapas-lista", ETAPAS_CK.map(etapa => {
+    ${ETAPAS_CK.map(etapa => {
       const a=etapa.itens.filter(it=>ck[`${etapa.id}_${it}`]==="ok").length;
       const r=etapa.itens.filter(it=>ck[`${etapa.id}_${it}`]==="nok").length;
-      return `<div class="card" id="etapa-card-${etapa.id}" style="cursor:pointer">
+      return `<div class="card" onclick="APP.etapaAtual='${etapa.id}';renderAbaCheck()" style="cursor:pointer">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">${etapa.icon}</span><span style="font-weight:700;font-size:15px">${etapa.nome}</span></div>
           <div style="display:flex;align-items:center;gap:6px">
@@ -589,14 +572,21 @@ function renderAbaCheck() {
         ${bar(Math.round(a/etapa.itens.length*100),6,r>0?"#F87171":"#F59E0B")}
         <div style="font-size:11px;color:#9CA3AF;margin-top:4px">${a}/${etapa.itens.length} itens</div>
       </div>`;
-    }).join(""));
-  ETAPAS_CK.forEach(etapa => {
-    const card = qs(`etapa-card-${etapa.id}`);
-    if(card) card.addEventListener("click", () => { APP.etapaAtual = etapa.id; renderAbaCheck(); });
-  });
-  return;
+    }).join("")}
+  `);
 }
-// (funções de checklist consolidadas acima em renderAbaCheck/renderEtapasLista/renderEtapaDetalhe/salvarCheckItem)
+window.setCheck = async (etapaId, itemEnc, valor) => {
+  const item = decodeURIComponent(itemEnc);
+  const k = `${etapaId}_${item}`;
+  if(valor==="null"||valor===null) delete APP.checkData[k]; else APP.checkData[k]=valor;
+  await dbSave("check_"+APP.obraAtual.id, APP.checkData);
+  const apr = Object.values(APP.checkData).filter(v=>v==="ok").length;
+  const pct = Math.round(apr/TOTAL_CK*100);
+  APP.obras = APP.obras.map(o=>o.id===APP.obraAtual.id?{...o,progresso:pct}:o);
+  APP.obraAtual = {...APP.obraAtual, progresso:pct};
+  await dbSave("obras", APP.obras);
+  renderAbaCheck();
+};
 
 // ── Aba Diário ────────────────────────────────────────────────────────────────
 function renderAbaDiario() {
@@ -939,24 +929,8 @@ function renderEquipe() {
   }
 }
 
-function calcFechamento(p, diarias, mes) {
-  const dmes = diarias.filter(d=>d.prestId===p.id&&d.data?.slice(0,7)===mes);
-  const diasTrab = dmes.filter(d=>d.oc==="Trabalhou").length;
-  const diasMeio = dmes.filter(d=>d.oc==="Meio período").length;
-  const totalBruto = (diasTrab*(p.diaria||0)) + (diasMeio*(p.diaria||0)/2);
-  const totalAdt = dmes.filter(d=>d.tipo==="adiantamento").reduce((a,d)=>a+parseFloat(d.valor||0),0);
-  const totalPgDiaria = dmes.filter(d=>d.pago!==false&&!d.tipo&&d.valor>0).reduce((a,d)=>a+parseFloat(d.valor||0),0);
-  const saldo = totalBruto - totalAdt - totalPgDiaria;
-  return { diasTrab, diasMeio, totalBruto, totalAdt, totalPgDiaria, saldo };
-}
-
 function renderListaPrest() {
   const prest=APP.prestadores, diarias=APP.diarias, mes=APP.prestMes;
-  // Painel de fechamento do mês
-  const fechamentos = prest.map(p => ({p, f:calcFechamento(p,diarias,mes)}));
-  const totalPagar = fechamentos.reduce((a,{f})=>a+(f.saldo>0?f.saldo:0),0);
-  const totalAdt   = fechamentos.reduce((a,{f})=>a+f.totalAdt,0);
-
   setHTML("main-content",`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <div><div style="font-weight:800;font-size:20px;color:#1F2937">Equipe</div><div style="font-size:12px;color:#9CA3AF">${prest.length} prestador(es)</div></div>
@@ -965,30 +939,16 @@ function renderListaPrest() {
         <button class="btn-primary btn-sm" style="width:auto" id="btn-novo-prest">+ Prestador</button>
       </div>
     </div>
-
-    <!-- Resumo do mês -->
-    <div class="card" style="background:#FFFBEB;border-color:#FDE68A;margin-bottom:12px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <div style="font-weight:700;font-size:13px;color:#92400E">📅 Fechamento do mês</div>
+    <div class="card" style="background:#FFFBEB;border-color:#FDE68A">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-weight:700;font-size:13px;color:#92400E">📅 Resumo do mês</div>
         <input type="month" value="${mes}" onchange="APP.prestMes=this.value;renderEquipe()" style="padding:4px 8px;border:1px solid #FDE68A;border-radius:8px;font-size:13px;outline:none;background:transparent"/>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-        <div style="background:#fff;border-radius:10px;padding:8px;text-align:center">
-          <div style="font-size:10px;color:#9CA3AF;font-weight:700">💰 A PAGAR</div>
-          <div style="font-weight:900;font-size:16px;color:#DC2626">${fmtBRL(totalPagar)}</div>
-        </div>
-        <div style="background:#fff;border-radius:10px;padding:8px;text-align:center">
-          <div style="font-size:10px;color:#9CA3AF;font-weight:700">💵 ADIANTADO</div>
-          <div style="font-weight:900;font-size:16px;color:#F59E0B">${fmtBRL(totalAdt)}</div>
-        </div>
-        <div style="background:#fff;border-radius:10px;padding:8px;text-align:center">
-          <div style="font-size:10px;color:#9CA3AF;font-weight:700">👷 PRESTADORES</div>
-          <div style="font-weight:900;font-size:16px;color:#374151">${prest.length}</div>
-        </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="background:#fff;border-radius:10px;padding:8px"><div style="font-size:11px;color:#9CA3AF">✅ Total pago</div><div style="font-weight:900;font-size:18px;color:#059669">${fmtBRL(diarias.filter(d=>d.data?.slice(0,7)===mes&&d.pago!==false).reduce((a,d)=>a+parseFloat(d.valor||0),0))}</div></div>
+        <div style="background:#fff;border-radius:10px;padding:8px"><div style="font-size:11px;color:#9CA3AF">⏳ Pendente</div><div style="font-weight:900;font-size:18px;color:#F59E0B">${fmtBRL(diarias.filter(d=>d.data?.slice(0,7)===mes&&d.pago===false).reduce((a,d)=>a+parseFloat(d.valor||0),0))}</div></div>
       </div>
     </div>
-
-    <!-- Cards por prestador com fechamento -->
     ${prest.length===0?`<div class="card" style="text-align:center;padding:40px"><div style="font-size:48px;margin-bottom:12px">👷</div><div style="font-weight:800;font-size:16px;color:#374151;margin-bottom:16px">Nenhum prestador cadastrado</div><button class="btn-primary" id="btn-add-prest-empty">+ Adicionar prestador</button></div>`:""}
     <div id="lista-prest"></div>
   `);
@@ -1046,9 +1006,6 @@ function renderFormPrest() {
         <select id="p-funcao" class="inp">${FUNCOES.map(f=>`<option>${f}</option>`).join("")}</select>
       </div>
       <div class="field"><label class="label">Valor da diária (R$)</label><input id="p-diaria" class="inp" type="number" placeholder="Ex: 180"/></div>
-      <div class="field"><label class="label">Período de pagamento</label>
-        <select id="p-periodo" class="inp">${PERIODOS.map(p=>`<option>${p}</option>`).join("")}</select>
-      </div>
       <div style="display:flex;gap:8px;margin-top:4px">
         <button class="btn-outline" id="btn-cancelar-prest">Cancelar</button>
         <button class="btn-primary" id="btn-salvar-prest">Salvar prestador</button>
@@ -1061,9 +1018,8 @@ function renderFormPrest() {
     const nome = (qs("p-nome")?.value||"").trim();
     const funcao = qs("p-funcao")?.value||"Pedreiro";
     const diaria = parseFloat(qs("p-diaria")?.value||0)||0;
-    const periodo = qs("p-periodo")?.value||"Semanal";
     if(!nome) { alert("Informe o nome do prestador."); return; }
-    APP.prestadores = [...APP.prestadores, {id:uid(), nome, funcao, diaria, periodo}];
+    APP.prestadores = [...APP.prestadores, {id:uid(), nome, funcao, diaria}];
     await dbSave("prestadores", APP.prestadores);
     APP.prestView = "lista";
     renderEquipe();
@@ -1158,11 +1114,6 @@ window.selecionarOc = oc => {
     const btn=qs(`oc-${o.replace(/\s/g,'_')}`);
     if(btn){btn.style.border=o===oc?"2px solid #F59E0B":"1px solid #E5E7EB";btn.style.background=o===oc?"#FEF3C7":"#F9FAFB";}
   });
-  // Recalcular preview do valor
-  const prestId = qs("fd-prest")?.value||"";
-  const p = APP.prestadores.find(x=>x.id===prestId);
-  const v = oc==="Trabalhou"?(p?.diaria||0):oc==="Meio período"?(p?.diaria||0)/2:0;
-  setHTML("preview-valor", p&&v>0?`<div style="background:#F0FDF4;border:1px solid #A7F3D0;border-radius:10px;padding:10px;margin-bottom:12px;font-size:13px;color:#065F46;font-weight:700">💰 Será lançado: ${fmtBRL(v)}</div>`:"");
 };
 window.selecionarDiariaPago = v => {
   APP.diariaPago=v;
@@ -1187,7 +1138,6 @@ function renderDetalhePrest() {
       <button class="btn-outline btn-sm" style="width:auto" id="btn-voltar-detalhe">← Voltar</button>
       <div style="flex:1"><div style="font-weight:800;font-size:16px">${p.nome}</div><div style="font-size:12px;color:#6B7280">${p.funcao} · ${fmtBRL(p.diaria)}/dia</div></div>
       <button class="btn-primary btn-sm" style="width:auto" id="btn-add-diaria-detalhe">+ Diária</button>
-      <button style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:7px 12px;font-weight:700;font-size:12px;cursor:pointer;color:#92400E" id="btn-add-adt-detalhe">💵 Adiantar</button>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
       ${[["💰 Total pago",fmtBRL(tPago),"#059669"],["⏳ Pendente",fmtBRL(tPend),"#F59E0B"],["✅ Trabalhados",tTrab,"#374151"],["❌ Faltas",tFalt,"#DC2626"]].map(([lb,v,c])=>`<div class="card" style="margin-bottom:0;padding:10px;text-align:center"><div style="font-size:11px;color:#9CA3AF">${lb}</div><div style="font-weight:900;font-size:15px;color:${c}">${v}</div></div>`).join("")}
@@ -1211,7 +1161,6 @@ function renderDetalhePrest() {
 
   qs("btn-voltar-detalhe").addEventListener("click",()=>{APP.prestView="lista";APP.prestAtual=null;renderEquipe();});
   qs("btn-add-diaria-detalhe").addEventListener("click",()=>{APP.diariaOc="Trabalhou";APP.diariaPago=true;APP.prestView="form_diaria";renderEquipe();});
-  qs("btn-add-adt-detalhe")?.addEventListener("click",()=>{ abrirAdiantamento(p.id); });
 
   setHTML("lista-diarias", meses.map(m=>{
     const regs=todas.filter(d=>d.data?.slice(0,7)===m);
@@ -1222,26 +1171,8 @@ function renderDetalhePrest() {
         <div style="font-weight:700;font-size:13px;color:#6B7280;text-transform:capitalize">${nm}</div>
         <div style="font-weight:800;font-size:13px;color:#F59E0B">${fmtBRL(regs.reduce((a,d)=>a+parseFloat(d.valor||0),0))}</div>
       </div>
-              ${regs.map(d=>{
+      ${regs.map(d=>{
         const ob=APP.obras.find(o=>o.id===d.obraId);
-        // Card de adiantamento
-        if(d.tipo==="adiantamento") return `<div class="card" style="border-left:3px solid #F59E0B;background:#FFFBEB">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start">
-            <div>
-              <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
-                <span style="font-size:16px">💵</span>
-                <span style="font-weight:700;font-size:13px">${fmtDt(d.data)}</span>
-                <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#FEF3C7;color:#92400E;font-weight:700">Adiantamento</span>
-              </div>
-              ${d.obs?`<div style="font-size:11px;color:#9CA3AF;margin-top:2px">📝 ${d.obs}</div>`:""}
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-              <div style="font-weight:900;font-size:14px;color:#F59E0B">- ${fmtBRL(d.valor)}</div>
-              <button onclick="confirmarDeletar('diaria','${d.id}','este adiantamento')" style="background:transparent;border:none;cursor:pointer;font-size:16px">🗑️</button>
-            </div>
-          </div>
-        </div>`;
-        // Card de diária normal
         return `<div class="card" style="border-left:3px solid ${OC_C[d.oc]||"#E5E7EB"}">
           <div style="display:flex;justify-content:space-between;align-items:flex-start">
             <div>
@@ -1268,39 +1199,6 @@ window.togglePagoDiaria = async id => {
   APP.diarias = APP.diarias.map(d=>d.id===id?{...d,pago:d.pago===false?true:false}:d);
   await dbSave("diarias", APP.diarias);
   renderDetalhePrest();
-};
-
-// ── Adiantamentos ─────────────────────────────────────────────────────────────
-window.abrirAdiantamento = (prestId) => {
-  const modal = qs("modal-confirm");
-  modal.style.display = "flex";
-  modal.innerHTML = `<div class="modal-box" onclick="event.stopPropagation()">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-      <div style="font-weight:800;font-size:18px;color:#1F2937">💵 Registrar Adiantamento</div>
-      <button onclick="qs('modal-confirm').style.display='none'" style="background:#F3F4F6;border:none;border-radius:8px;padding:6px 12px;font-size:16px;cursor:pointer">✕</button>
-    </div>
-    <div class="field"><label class="label">Valor adiantado (R$) *</label><input id="adt-valor" class="inp" type="number" placeholder="Ex: 150"/></div>
-    <div class="field"><label class="label">Data</label><input id="adt-data" class="inp" type="date" value="${toDay()}"/></div>
-    <div class="field"><label class="label">Observação</label><input id="adt-obs" class="inp" placeholder="Ex: Adiantamento semanal"/></div>
-    <div style="display:flex;gap:10px;margin-top:8px">
-      <button class="btn-outline" onclick="qs('modal-confirm').style.display='none'">Cancelar</button>
-      <button class="btn-primary" id="btn-salvar-adt">💾 Salvar</button>
-    </div>
-  </div>`;
-  qs("btn-salvar-adt").addEventListener("click", async () => {
-    const valor = parseFloat(qs("adt-valor")?.value||0);
-    if(!valor) { alert("Informe o valor."); return; }
-    const adt = {
-      id: uid(), prestId,
-      valor, data: qs("adt-data")?.value||toDay(),
-      obs: qs("adt-obs")?.value||"",
-      tipo: "adiantamento"
-    };
-    APP.diarias = [adt, ...APP.diarias];
-    await dbSave("diarias", APP.diarias);
-    qs("modal-confirm").style.display = "none";
-    renderDetalhePrest();
-  });
 };
 
 // ── Selecionar Obra (checklist/custos no nav) ──────────────────────────────────
@@ -1357,20 +1255,6 @@ qs("btn-backup").addEventListener("click", async () => {
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-window.renderPage = renderPage;
-window.abrirObra = abrirObra;
-window.mudarAba = mudarAba;
-window.abrirFormObra = () => abrirFormObra(null);
-window.abrirEditObra = id => abrirFormObra(APP.obras.find(o=>o.id===id));
-window.concluirObra = async id => {
-  APP.obras = APP.obras.map(o => o.id===id ? {...o,status:"Finalizada",progresso:100} : o);
-  await dbSave("obras", APP.obras);
-  renderObras();
-};
-window.renderObras = renderObras;
-window.renderEquipe = renderEquipe;
-window.renderDetalhePrest = renderDetalhePrest;
-
 async function init() {
   setHTML("main-content",`<div style="text-align:center;padding:60px;color:#9CA3AF"><div class="spin" style="font-size:32px">⏳</div><div style="margin-top:12px">Carregando...</div></div>`);
   const [obras,prest,diarias] = await Promise.all([dbLoad("obras",[]),dbLoad("prestadores",[]),dbLoad("diarias",[])]);
