@@ -1218,8 +1218,13 @@ function renderDetalhePrest() {
   const mes=APP.prestMes;
   const dmes=todas.filter(d=>d.data?.slice(0,7)===mes);
   const meses=[...new Set(todas.map(d=>d.data?.slice(0,7)).filter(Boolean))].sort().reverse();
-  const tPago=todas.filter(d=>d.pago!==false).reduce((a,d)=>a+parseFloat(d.valor||0),0);
-  const tPend=todas.filter(d=>d.pago===false).reduce((a,d)=>a+parseFloat(d.valor||0),0);
+
+  // Adiantamentos são valores já pagos adiantados — abatem do que ainda falta pagar nas diárias pendentes
+  const tAdt        = todas.filter(d=>d.tipo==="adiantamento").reduce((a,d)=>a+parseFloat(d.valor||0),0);
+  const tPagoDiarias= todas.filter(d=>d.tipo!=="adiantamento" && d.pago!==false).reduce((a,d)=>a+parseFloat(d.valor||0),0);
+  const tPendDiarias= todas.filter(d=>d.tipo!=="adiantamento" && d.pago===false).reduce((a,d)=>a+parseFloat(d.valor||0),0);
+  const tPago = tPagoDiarias + tAdt;
+  const tPend = Math.max(0, tPendDiarias - tAdt);
   const tTrab=todas.filter(d=>d.oc==="Trabalhou").length;
   const tFalt=todas.filter(d=>d.oc==="Falta").length;
 
@@ -1242,8 +1247,8 @@ function renderDetalhePrest() {
         <span>✅ <b>${dmes.filter(d=>d.oc==="Trabalhou").length}</b></span>
         <span>⏱️ <b>${dmes.filter(d=>d.oc==="Meio período").length}</b></span>
         <span>❌ <b>${dmes.filter(d=>d.oc==="Falta").length}</b></span>
-        <span style="color:#059669;font-weight:700">Pago: ${fmtBRL(dmes.filter(d=>d.pago!==false).reduce((a,d)=>a+parseFloat(d.valor||0),0))}</span>
-        ${dmes.some(d=>d.pago===false)?`<span style="color:#F59E0B;font-weight:700">Pend: ${fmtBRL(dmes.filter(d=>d.pago===false).reduce((a,d)=>a+parseFloat(d.valor||0),0))}</span>`:""}
+        <span style="color:#059669;font-weight:700">Pago: ${fmtBRL(dmes.filter(d=>d.tipo!=="adiantamento"&&d.pago!==false).reduce((a,d)=>a+parseFloat(d.valor||0),0) + dmes.filter(d=>d.tipo==="adiantamento").reduce((a,d)=>a+parseFloat(d.valor||0),0))}</span>
+        ${(()=>{ const pendMes = Math.max(0, dmes.filter(d=>d.tipo!=="adiantamento"&&d.pago===false).reduce((a,d)=>a+parseFloat(d.valor||0),0) - dmes.filter(d=>d.tipo==="adiantamento").reduce((a,d)=>a+parseFloat(d.valor||0),0)); return pendMes>0?`<span style="color:#F59E0B;font-weight:700">Pend: ${fmtBRL(pendMes)}</span>`:""; })()}
       </div>
     </div>
     ${todas.length===0?`<div style="text-align:center;padding:32px;color:#9CA3AF">Nenhuma diária ainda.</div>`:""}
