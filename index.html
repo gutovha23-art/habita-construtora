@@ -595,18 +595,7 @@ function renderAbaCheck() {
   });
   return;
 }
-window.setCheck = async (etapaId, itemEnc, valor) => {
-  const item = decodeURIComponent(itemEnc);
-  const k = `${etapaId}_${item}`;
-  if(valor==="null"||valor===null) delete APP.checkData[k]; else APP.checkData[k]=valor;
-  await dbSave("check_"+APP.obraAtual.id, APP.checkData);
-  const apr = Object.values(APP.checkData).filter(v=>v==="ok").length;
-  const pct = Math.round(apr/TOTAL_CK*100);
-  APP.obras = APP.obras.map(o=>o.id===APP.obraAtual.id?{...o,progresso:pct}:o);
-  APP.obraAtual = {...APP.obraAtual, progresso:pct};
-  await dbSave("obras", APP.obras);
-  renderAbaCheck();
-};
+// (funções de checklist consolidadas acima em renderAbaCheck/renderEtapasLista/renderEtapaDetalhe/salvarCheckItem)
 
 // ── Aba Diário ────────────────────────────────────────────────────────────────
 function renderAbaDiario() {
