@@ -153,6 +153,7 @@ const APP = {
   custoCat: "Material", custoPago: true, importPreview: [],
   prestView: "lista", prestAtual: null, prestMes: toDay().slice(0,7),
   diariaOc: "Trabalhou", diariaPago: true,
+  pagamentos: [],
 };
 window.APP = APP;
 
@@ -422,6 +423,10 @@ window.executarDeletar = async (tipo, id) => {
     APP.diarias = APP.diarias.filter(d=>d.id!==id);
     await dbSave("diarias", APP.diarias);
     renderEquipe();
+  } else if(tipo==="pagamento") {
+    APP.pagamentos = APP.pagamentos.filter(p=>p.id!==id);
+    await dbSave("pagamentos", APP.pagamentos);
+    renderHistoricoPagamentos();
   }
 };
 
@@ -976,6 +981,7 @@ function renderEquipe() {
     case "form_prest":  renderFormPrest(); break;
     case "form_diaria": renderFormDiaria(); break;
     case "detalhe":     renderDetalhePrest(); break;
+    case "historico":   renderHistoricoPagamentos(); break;
     default:            renderListaPrest(); break;
   }
 }
@@ -1002,6 +1008,7 @@ function renderListaPrest() {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <div><div style="font-weight:800;font-size:20px;color:#1F2937">Equipe</div><div style="font-size:12px;color:#9CA3AF">${prest.length} prestador(es)</div></div>
       <div style="display:flex;gap:8px">
+        <button class="btn-outline btn-sm" style="width:auto" id="btn-historico-pag">📜 Histórico</button>
         <button class="btn-outline btn-sm" style="width:auto" id="btn-nova-diaria">+ Diária</button>
         <button class="btn-primary btn-sm" style="width:auto" id="btn-novo-prest">+ Prestador</button>
       </div>
@@ -1037,6 +1044,7 @@ function renderListaPrest() {
   qs("btn-novo-prest")?.addEventListener("click", () => { APP.prestView="form_prest"; renderEquipe(); });
   qs("btn-nova-diaria")?.addEventListener("click", () => { APP.diariaOc="Trabalhou"; APP.diariaPago=true; APP.prestView="form_diaria"; renderEquipe(); });
   qs("btn-add-prest-empty")?.addEventListener("click", () => { APP.prestView="form_prest"; renderEquipe(); });
+  qs("btn-historico-pag")?.addEventListener("click", () => { APP.prestView="historico"; renderEquipe(); });
 
   setHTML("lista-prest", prest.map(p => {
     const dmes=diarias.filter(d=>d.prestId===p.id&&d.data?.slice(0,7)===mes);
@@ -1075,6 +1083,57 @@ function renderListaPrest() {
     if(card) card.addEventListener("click", () => { APP.prestAtual=p; APP.prestView="detalhe"; renderEquipe(); });
     if(delBtn) delBtn.addEventListener("click", e => { e.stopPropagation(); confirmarDeletar("prest",p.id,p.nome); });
   });
+}
+
+// ── Histórico de Pagamentos ─────────────────────────────────────────────────
+function renderHistoricoPagamentos() {
+  const pags = [...(APP.pagamentos||[])].sort((a,b)=>(b.data||"").localeCompare(a.data||""));
+  const totalGeral = pags.reduce((a,p)=>a+parseFloat(p.valor||0),0);
+  const meses = [...new Set(pags.map(p=>p.data?.slice(0,7)).filter(Boolean))].sort().reverse();
+
+  setHTML("main-content",`
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <button class="btn-outline btn-sm" style="width:auto" id="btn-voltar-historico">← Voltar</button>
+      <div style="flex:1"><div style="font-weight:800;font-size:16px">📜 Histórico de Pagamentos</div><div style="font-size:12px;color:#6B7280">${pags.length} registro(s)</div></div>
+    </div>
+    <div class="card" style="background:#FFFBEB;border-color:#FDE68A;text-align:center;margin-bottom:12px">
+      <div style="font-size:11px;color:#92400E;font-weight:700">💰 TOTAL PAGO (histórico completo)</div>
+      <div style="font-weight:900;font-size:20px;color:#F59E0B">${fmtBRL(totalGeral)}</div>
+    </div>
+    ${pags.length===0?`<div style="text-align:center;padding:32px;color:#9CA3AF">Nenhum pagamento registrado ainda.</div>`:""}
+    <div id="historico-lista"></div>
+  `);
+
+  qs("btn-voltar-historico").addEventListener("click", () => { APP.prestView="lista"; renderEquipe(); });
+
+  setHTML("historico-lista", meses.map(m => {
+    const regs = pags.filter(p=>p.data?.slice(0,7)===m);
+    const [ano,mm] = m.split("-");
+    const nm = new Date(ano,mm-1,1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+    const totalMes = regs.reduce((a,p)=>a+parseFloat(p.valor||0),0);
+    return `<div style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-weight:800;font-size:13px;text-transform:capitalize;color:#374151">${nm}</span>
+        <span style="font-weight:800;font-size:13px;color:#F59E0B">${fmtBRL(totalMes)}</span>
+      </div>
+      ${regs.map(p=>`
+        <div class="card" style="border-left:3px solid ${p.tipo==="adiantamento"?"#818CF8":"#059669"};margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:800;font-size:14px">${p.nome}</div>
+              <div style="font-size:12px;color:#9CA3AF;margin-top:2px">${fmtDt(p.data)} · ${p.periodo||""}</div>
+              <span style="display:inline-block;margin-top:6px;font-size:11px;padding:2px 8px;border-radius:10px;background:${p.tipo==="adiantamento"?"#EEF2FF":"#D1FAE5"};color:${p.tipo==="adiantamento"?"#4338CA":"#065F46"};font-weight:700">${p.tipo==="adiantamento"?"💵 Adiantamento":"✅ Pagamento de diárias"}</span>
+              ${p.qtdDiarias?`<div style="font-size:11px;color:#9CA3AF;margin-top:4px">${p.qtdDiarias} diária(s)${p.adiantamentoAbatido>0?` · adiantamento abatido: ${fmtBRL(p.adiantamentoAbatido)}`:""}</div>`:""}
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="font-weight:900;font-size:15px;color:#059669">${fmtBRL(p.valor)}</div>
+              <button onclick="confirmarDeletar('pagamento','${p.id}','este registro do histórico')" style="background:transparent;border:none;cursor:pointer;font-size:16px">🗑️</button>
+            </div>
+          </div>
+        </div>
+      `).join("")}
+    </div>`;
+  }).join(""));
 }
 
 function renderFormPrest() {
@@ -1234,6 +1293,7 @@ function renderDetalhePrest() {
       <div style="flex:1"><div style="font-weight:800;font-size:16px">${p.nome}</div><div style="font-size:12px;color:#6B7280">${p.funcao} · ${fmtBRL(p.diaria)}/dia</div></div>
       <button class="btn-primary btn-sm" style="width:auto" id="btn-add-diaria-detalhe">+ Diária</button>
       <button style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:7px 12px;font-weight:700;font-size:12px;cursor:pointer;color:#92400E" id="btn-add-adt-detalhe">💵 Adiantar</button>
+      <button style="background:#059669;border:none;border-radius:8px;padding:7px 12px;font-weight:700;font-size:12px;cursor:pointer;color:#fff" id="btn-pagar-detalhe">💰 Pagar tudo</button>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
       ${[["💰 Total pago",fmtBRL(tPago),"#059669"],["⏳ Pendente",fmtBRL(tPend),"#F59E0B"],["✅ Trabalhados",tTrab,"#374151"],["❌ Faltas",tFalt,"#DC2626"]].map(([lb,v,c])=>`<div class="card" style="margin-bottom:0;padding:10px;text-align:center"><div style="font-size:11px;color:#9CA3AF">${lb}</div><div style="font-weight:900;font-size:15px;color:${c}">${v}</div></div>`).join("")}
@@ -1258,6 +1318,7 @@ function renderDetalhePrest() {
   qs("btn-voltar-detalhe").addEventListener("click",()=>{APP.prestView="lista";APP.prestAtual=null;renderEquipe();});
   qs("btn-add-diaria-detalhe").addEventListener("click",()=>{APP.diariaOc="Trabalhou";APP.diariaPago=true;APP.prestView="form_diaria";renderEquipe();});
   qs("btn-add-adt-detalhe")?.addEventListener("click",()=>{ abrirAdiantamento(p.id); });
+  qs("btn-pagar-detalhe")?.addEventListener("click",()=>{ abrirConfirmarPagamento(p.id); });
 
   setHTML("lista-diarias", meses.map(m=>{
     const regs=todas.filter(d=>d.data?.slice(0,7)===m);
@@ -1299,6 +1360,7 @@ function renderDetalhePrest() {
               <div style="font-size:12px;color:#6B7280">🏗️ ${ob?.nome||"—"}</div>
               ${d.obs?`<div style="font-size:11px;color:#9CA3AF;margin-top:2px">📝 ${d.obs}</div>`:""}
               ${pagoBadge(d.pago, `togglePagoDiaria('${d.id}')`)}
+              ${d.pago===false?`<button onclick="abrirConfirmarPagamento('${p.id}','${d.id}')" style="margin-left:6px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:8px;border:none;cursor:pointer;background:#059669;color:#fff">💰 Pagar esta</button>`:""}
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
               ${d.valor>0?`<div style="font-weight:900;font-size:14px;color:#F59E0B">${fmtBRL(d.valor)}</div>`:""}
@@ -1338,15 +1400,100 @@ window.abrirAdiantamento = (prestId) => {
   qs("btn-salvar-adt").addEventListener("click", async () => {
     const valor = parseFloat(qs("adt-valor")?.value||0);
     if(!valor) { alert("Informe o valor."); return; }
+    const dataAdt = qs("adt-data")?.value||toDay();
     const adt = {
       id: uid(), prestId,
-      valor, data: qs("adt-data")?.value||toDay(),
+      valor, data: dataAdt,
       obs: qs("adt-obs")?.value||"",
       tipo: "adiantamento"
     };
     APP.diarias = [adt, ...APP.diarias];
     await dbSave("diarias", APP.diarias);
+
+    // Registra também no histórico de pagamentos
+    const prest = APP.prestadores.find(pr=>pr.id===prestId);
+    APP.pagamentos = [{
+      id: uid(), prestId, nome: prest?.nome||"",
+      periodo: fmtDt(dataAdt), valor, tipo: "adiantamento", data: dataAdt,
+    }, ...(APP.pagamentos||[])];
+    await dbSave("pagamentos", APP.pagamentos);
+
     qs("modal-confirm").style.display = "none";
+    renderDetalhePrest();
+  });
+};
+
+// ── Pagar pendências (quita diárias pendentes, abate adiantamentos, gera histórico) ──
+// Consome adiantamentos de um prestador até o valor informado (reduz ou remove os registros conforme necessário)
+function consumirAdiantamentos(prestId, valorAConsumir) {
+  let restante = valorAConsumir;
+  APP.diarias = APP.diarias
+    .map(d => {
+      if(d.prestId===prestId && d.tipo==="adiantamento" && restante>0.004) {
+        const v = parseFloat(d.valor||0);
+        if(v <= restante + 0.004) { restante -= v; return null; } // totalmente consumido
+        const novoValor = +(v - restante).toFixed(2);
+        restante = 0;
+        return {...d, valor: novoValor};
+      }
+      return d;
+    })
+    .filter(Boolean);
+}
+
+window.abrirConfirmarPagamento = (prestId, diariaId=null) => {
+  const p = APP.prestadores.find(pr=>pr.id===prestId);
+  if(!p) return;
+  const diariasPend = diariaId
+    ? APP.diarias.filter(d=>d.id===diariaId && d.prestId===prestId && d.tipo!=="adiantamento" && d.pago===false)
+    : APP.diarias.filter(d=>d.prestId===prestId && d.tipo!=="adiantamento" && d.pago===false);
+  const adts = APP.diarias.filter(d=>d.prestId===prestId && d.tipo==="adiantamento");
+  const tPendDiarias = diariasPend.reduce((a,d)=>a+parseFloat(d.valor||0),0);
+  const tAdtDisponivel = adts.reduce((a,d)=>a+parseFloat(d.valor||0),0);
+  const tAdtUsar = Math.min(tAdtDisponivel, tPendDiarias); // abate só o necessário para este pagamento
+  const valorPagar = Math.max(0, tPendDiarias - tAdtUsar);
+
+  if(diariasPend.length===0) { alert(diariaId?"Esta diária já está paga.":"Não há diárias pendentes para pagar."); return; }
+
+  const datas = diariasPend.map(d=>d.data).filter(Boolean).sort();
+  const periodo = datas.length ? (datas[0]===datas[datas.length-1] ? fmtDt(datas[0]) : `${fmtDt(datas[0])} a ${fmtDt(datas[datas.length-1])}`) : fmtDt(toDay());
+  const titulo = diariaId ? `Pagar diária de ${fmtDt(diariasPend[0].data)}?` : `Pagar ${p.nome}?`;
+
+  const modal = qs("modal-confirm");
+  modal.style.display = "flex";
+  modal.innerHTML = `<div class="modal-box" onclick="event.stopPropagation()" style="text-align:center;padding:28px">
+    <div style="font-size:36px;margin-bottom:10px">💰</div>
+    <div style="font-weight:800;font-size:16px;color:#1F2937;margin-bottom:14px">${titulo}</div>
+    <div style="background:#F9FAFB;border-radius:10px;padding:12px;text-align:left;font-size:13px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>${diariaId?"Valor da diária":`Diárias pendentes (${diariasPend.length})`}</span><b>${fmtBRL(tPendDiarias)}</b></div>
+      ${tAdtUsar>0?`<div style="display:flex;justify-content:space-between;margin-bottom:4px;color:#F59E0B"><span>Adiantamento a abater</span><b>- ${fmtBRL(tAdtUsar)}</b></div>`:""}
+      <div style="border-top:1px solid #E5E7EB;margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;font-weight:900;color:#059669"><span>Valor líquido a pagar</span><span>${fmtBRL(valorPagar)}</span></div>
+      ${tAdtDisponivel>tAdtUsar?`<div style="font-size:11px;color:#9CA3AF;margin-top:6px">Sobra de adiantamento (fica disponível p/ próximo pagamento): ${fmtBRL(tAdtDisponivel-tAdtUsar)}</div>`:""}
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn-outline" id="btn-cancelar-pagar">Cancelar</button>
+      <button class="btn-primary" id="btn-confirmar-pagar" style="background:#059669">Confirmar pagamento</button>
+    </div>
+  </div>`;
+  qs("btn-cancelar-pagar").addEventListener("click", () => { modal.style.display="none"; });
+  qs("btn-confirmar-pagar").addEventListener("click", async () => {
+    const idsPagos = diariasPend.map(d=>d.id);
+    // Marca as diárias selecionadas como pagas
+    APP.diarias = APP.diarias.map(d => idsPagos.includes(d.id) ? {...d,pago:true,dataPagamento:toDay()} : d);
+    // Consome (reduz/remove) apenas o valor de adiantamento efetivamente usado neste pagamento
+    if(tAdtUsar>0) consumirAdiantamentos(prestId, tAdtUsar);
+    await dbSave("diarias", APP.diarias);
+
+    // Registra no histórico de pagamentos
+    APP.pagamentos = [{
+      id: uid(), prestId, nome: p.nome,
+      periodo, valor: valorPagar, tipo: "pagamento",
+      qtdDiarias: diariasPend.length, adiantamentoAbatido: tAdtUsar,
+      data: toDay(),
+    }, ...(APP.pagamentos||[])];
+    await dbSave("pagamentos", APP.pagamentos);
+
+    modal.style.display = "none";
     renderDetalhePrest();
   });
 };
@@ -1421,8 +1568,8 @@ window.renderDetalhePrest = renderDetalhePrest;
 
 async function init() {
   setHTML("main-content",`<div style="text-align:center;padding:60px;color:#9CA3AF"><div class="spin" style="font-size:32px">⏳</div><div style="margin-top:12px">Carregando...</div></div>`);
-  const [obras,prest,diarias] = await Promise.all([dbLoad("obras",[]),dbLoad("prestadores",[]),dbLoad("diarias",[])]);
-  APP.obras = obras; APP.prestadores = prest; APP.diarias = diarias;
+  const [obras,prest,diarias,pagamentos] = await Promise.all([dbLoad("obras",[]),dbLoad("prestadores",[]),dbLoad("diarias",[]),dbLoad("pagamentos",[])]);
+  APP.obras = obras; APP.prestadores = prest; APP.diarias = diarias; APP.pagamentos = pagamentos;
   renderPage();
 }
 init();
