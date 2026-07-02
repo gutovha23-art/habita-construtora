@@ -1034,6 +1034,7 @@ function renderListaPrest() {
           <div style="font-weight:900;font-size:16px;color:#374151">${prest.length}</div>
         </div>
       </div>
+      <button id="btn-exportar-pag" style="width:100%;margin-top:10px;background:#4F46E5;border:none;border-radius:10px;padding:10px;font-weight:800;font-size:13px;cursor:pointer;color:#fff">📤 Exportar lista de pagamento (PIX)</button>
     </div>
 
     <!-- Cards por prestador com fechamento -->
@@ -1045,6 +1046,7 @@ function renderListaPrest() {
   qs("btn-nova-diaria")?.addEventListener("click", () => { APP.diariaOc="Trabalhou"; APP.diariaPago=true; APP.prestView="form_diaria"; renderEquipe(); });
   qs("btn-add-prest-empty")?.addEventListener("click", () => { APP.prestView="form_prest"; renderEquipe(); });
   qs("btn-historico-pag")?.addEventListener("click", () => { APP.prestView="historico"; renderEquipe(); });
+  qs("btn-exportar-pag")?.addEventListener("click", () => { abrirExportarPagamento(); });
 
   setHTML("lista-prest", prest.map(p => {
     const dmes=diarias.filter(d=>d.prestId===p.id&&d.data?.slice(0,7)===mes);
@@ -1090,6 +1092,61 @@ function renderListaPrest() {
     if(pixBtn) pixBtn.addEventListener("click", e => copiarPix(p.pix, e));
   });
 }
+
+// ── Exportar lista de pagamento (texto com nome, valor e PIX) ────────────────
+window.abrirExportarPagamento = () => {
+  const mes = APP.prestMes;
+  const [ano,mm] = mes.split("-");
+  const nomeMes = new Date(ano,mm-1,1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+  const fechamentos = APP.prestadores
+    .map(p => ({p, f:calcFechamento(p,APP.diarias,mes)}))
+    .filter(({f}) => f.saldo > 0);
+
+  if(fechamentos.length===0) { alert("Nenhum prestador com valor a pagar em "+nomeMes+"."); return; }
+
+  const linhas = fechamentos.map(({p,f}) => {
+    const dias = f.diasTrab + (f.diasMeio>0?` + ${f.diasMeio} meio período`:"");
+    return `👷 *${p.nome.toUpperCase()}*\n`
+      + `📆 Diárias: ${dias}\n`
+      + `💵 Valor: ${fmtBRL(f.saldo)}\n`
+      + `🔑 PIX: ${p.pix||"(não cadastrado)"}`;
+  });
+  const total = fechamentos.reduce((a,{f})=>a+f.saldo,0);
+  const texto = `💰 *PAGAMENTOS – ${nomeMes.toUpperCase()}*\n`
+    + `🏗️ Habita Construtora\n\n`
+    + linhas.join("\n➖➖➖➖➖➖➖➖➖➖\n")
+    + `\n\n✅ *TOTAL: ${fmtBRL(total)}*\n`
+    + `_${fechamentos.length} prestador(es)_`;
+
+  const modal = qs("modal-confirm");
+  modal.style.display = "flex";
+  modal.innerHTML = `<div class="modal-box" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="font-weight:800;font-size:16px;color:#1F2937">📤 Lista de Pagamento</div>
+      <button id="btn-fechar-exp" style="background:#F3F4F6;border:none;border-radius:8px;padding:6px 12px;font-size:16px;cursor:pointer">✕</button>
+    </div>
+    <div style="font-size:12px;color:#6B7280;margin-bottom:8px">Revise o texto abaixo (pode editar antes de copiar):</div>
+    <textarea id="exp-texto" style="width:100%;box-sizing:border-box;height:260px;padding:12px;border:1px solid #E5E7EB;border-radius:10px;font-size:13px;font-family:inherit;resize:vertical;outline:none;background:#F9FAFB">${texto}</textarea>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button id="btn-copiar-exp" style="flex:1;background:#4F46E5;border:none;border-radius:10px;padding:11px;font-weight:800;font-size:13px;cursor:pointer;color:#fff">📋 Copiar texto</button>
+      <button id="btn-whats-exp" style="flex:1;background:#25D366;border:none;border-radius:10px;padding:11px;font-weight:800;font-size:13px;cursor:pointer;color:#fff">💬 WhatsApp</button>
+    </div>
+  </div>`;
+
+  qs("btn-fechar-exp").addEventListener("click", () => { modal.style.display="none"; });
+  qs("btn-copiar-exp").addEventListener("click", async () => {
+    const t = qs("exp-texto").value;
+    try { await navigator.clipboard.writeText(t); }
+    catch(e) { qs("exp-texto").select(); document.execCommand("copy"); }
+    const btn = qs("btn-copiar-exp");
+    btn.textContent = "✅ Copiado!";
+    setTimeout(()=>{ if(qs("btn-copiar-exp")) qs("btn-copiar-exp").textContent="📋 Copiar texto"; }, 2000);
+  });
+  qs("btn-whats-exp").addEventListener("click", () => {
+    const t = qs("exp-texto").value;
+    window.open("https://wa.me/?text="+encodeURIComponent(t), "_blank");
+  });
+};
 
 // ── Histórico de Pagamentos ─────────────────────────────────────────────────
 function renderHistoricoPagamentos() {
