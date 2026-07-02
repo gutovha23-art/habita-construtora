@@ -1058,8 +1058,10 @@ function renderListaPrest() {
         <div style="flex:1;min-width:0">
           <div style="font-weight:800;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.nome}</div>
           <div style="font-size:12px;color:#6B7280">${p.funcao} · <span style="color:#F59E0B;font-weight:700">${fmtBRL(p.diaria)}/dia</span></div>
+          ${p.pix?`<div style="margin-top:4px"><button id="pix-prest-${p.id}" title="Copiar chave PIX" style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;padding:2px 8px;font-size:11px;font-weight:700;color:#4338CA;cursor:pointer;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🔑 ${p.pix} 📋</button></div>`:""}
         </div>
         <div style="display:flex;gap:4px;align-items:center">
+          <button id="edit-prest-${p.id}" title="Editar cadastro" style="background:transparent;border:none;cursor:pointer;font-size:16px;padding:2px">✏️</button>
           <button id="del-prest-${p.id}" style="background:transparent;border:none;cursor:pointer;font-size:16px;padding:2px">🗑️</button>
           <span style="color:#D1D5DB">›</span>
         </div>
@@ -1080,8 +1082,12 @@ function renderListaPrest() {
   prest.forEach(p => {
     const card = qs(`prest-card-${p.id}`);
     const delBtn = qs(`del-prest-${p.id}`);
+    const editBtn = qs(`edit-prest-${p.id}`);
+    const pixBtn = qs(`pix-prest-${p.id}`);
     if(card) card.addEventListener("click", () => { APP.prestAtual=p; APP.prestView="detalhe"; renderEquipe(); });
     if(delBtn) delBtn.addEventListener("click", e => { e.stopPropagation(); confirmarDeletar("prest",p.id,p.nome); });
+    if(editBtn) editBtn.addEventListener("click", e => { e.stopPropagation(); APP.prestEdit=p; APP.prestView="form_prest"; renderEquipe(); });
+    if(pixBtn) pixBtn.addEventListener("click", e => copiarPix(p.pix, e));
   });
 }
 
@@ -1137,38 +1143,73 @@ function renderHistoricoPagamentos() {
 }
 
 function renderFormPrest() {
+  const ed = APP.prestEdit || null; // prestador em edição (null = novo cadastro)
   setHTML("main-content",`
     <button class="btn-outline btn-sm" style="width:auto;margin-bottom:16px" id="btn-voltar-prest">← Voltar</button>
     <div class="card">
-      <div style="font-weight:800;font-size:16px;color:#1F2937;margin-bottom:16px">👷 Novo Prestador</div>
-      <div class="field"><label class="label">Nome completo *</label><input id="p-nome" class="inp" placeholder="Ex: Carlos Pereira"/></div>
+      <div style="font-weight:800;font-size:16px;color:#1F2937;margin-bottom:16px">${ed?"✏️ Editar Prestador":"👷 Novo Prestador"}</div>
+      <div class="field"><label class="label">Nome completo *</label><input id="p-nome" class="inp" placeholder="Ex: Carlos Pereira" value="${ed?String(ed.nome||"").replace(/"/g,"&quot;"):""}"/></div>
       <div class="field"><label class="label">Função</label>
-        <select id="p-funcao" class="inp">${FUNCOES.map(f=>`<option>${f}</option>`).join("")}</select>
+        <select id="p-funcao" class="inp">${FUNCOES.map(f=>`<option ${ed&&ed.funcao===f?"selected":""}>${f}</option>`).join("")}</select>
       </div>
-      <div class="field"><label class="label">Valor da diária (R$)</label><input id="p-diaria" class="inp" type="number" placeholder="Ex: 180"/></div>
+      <div class="field"><label class="label">Valor da diária (R$)</label><input id="p-diaria" class="inp" type="number" placeholder="Ex: 180" value="${ed?(ed.diaria??""):""}"/></div>
       <div class="field"><label class="label">Período de pagamento</label>
-        <select id="p-periodo" class="inp">${PERIODOS.map(p=>`<option>${p}</option>`).join("")}</select>
+        <select id="p-periodo" class="inp">${PERIODOS.map(p=>`<option ${ed&&ed.periodo===p?"selected":""}>${p}</option>`).join("")}</select>
       </div>
+      <div class="field"><label class="label">Chave PIX</label><input id="p-pix" class="inp" placeholder="CPF, celular, e-mail ou chave aleatória" value="${ed?String(ed.pix||"").replace(/"/g,"&quot;"):""}"/></div>
       <div style="display:flex;gap:8px;margin-top:4px">
         <button class="btn-outline" id="btn-cancelar-prest">Cancelar</button>
-        <button class="btn-primary" id="btn-salvar-prest">Salvar prestador</button>
+        <button class="btn-primary" id="btn-salvar-prest">${ed?"Salvar alterações":"Salvar prestador"}</button>
       </div>
     </div>
   `);
-  qs("btn-voltar-prest").addEventListener("click", () => { APP.prestView="lista"; renderEquipe(); });
-  qs("btn-cancelar-prest").addEventListener("click", () => { APP.prestView="lista"; renderEquipe(); });
+  const voltar = () => {
+    if(ed && APP.prestAtual && APP.prestAtual.id===ed.id) { APP.prestView="detalhe"; }
+    else { APP.prestView="lista"; }
+    APP.prestEdit = null;
+    renderEquipe();
+  };
+  qs("btn-voltar-prest").addEventListener("click", voltar);
+  qs("btn-cancelar-prest").addEventListener("click", voltar);
   qs("btn-salvar-prest").addEventListener("click", async () => {
     const nome = (qs("p-nome")?.value||"").trim();
     const funcao = qs("p-funcao")?.value||"Pedreiro";
     const diaria = parseFloat(qs("p-diaria")?.value||0)||0;
     const periodo = qs("p-periodo")?.value||"Semanal";
+    const pix = (qs("p-pix")?.value||"").trim();
     if(!nome) { alert("Informe o nome do prestador."); return; }
-    APP.prestadores = [...APP.prestadores, {id:uid(), nome, funcao, diaria, periodo}];
+    if(ed) {
+      // Edição: atualiza o prestador existente
+      APP.prestadores = APP.prestadores.map(pr => pr.id===ed.id ? {...pr, nome, funcao, diaria, periodo, pix} : pr);
+      if(APP.prestAtual && APP.prestAtual.id===ed.id) APP.prestAtual = APP.prestadores.find(pr=>pr.id===ed.id);
+      // Atualiza o nome nos registros do histórico de pagamentos
+      APP.pagamentos = (APP.pagamentos||[]).map(pg => pg.prestId===ed.id ? {...pg, nome} : pg);
+      await dbSave("pagamentos", APP.pagamentos);
+    } else {
+      APP.prestadores = [...APP.prestadores, {id:uid(), nome, funcao, diaria, periodo, pix}];
+    }
     await dbSave("prestadores", APP.prestadores);
-    APP.prestView = "lista";
+    APP.prestView = (ed && APP.prestAtual && APP.prestAtual.id===ed.id) ? "detalhe" : "lista";
+    APP.prestEdit = null;
     renderEquipe();
   });
 }
+
+// Copiar chave PIX para a área de transferência
+window.copiarPix = async (pix, ev) => {
+  if(ev) ev.stopPropagation();
+  if(!pix) { alert("Este prestador não tem chave PIX cadastrada. Edite o cadastro para adicionar."); return; }
+  try {
+    await navigator.clipboard.writeText(pix);
+    alert("🔑 Chave PIX copiada:\n" + pix);
+  } catch(e) {
+    // Fallback para navegadores sem clipboard API
+    const ta = document.createElement("textarea");
+    ta.value = pix; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); document.body.removeChild(ta);
+    alert("🔑 Chave PIX copiada:\n" + pix);
+  }
+};
 
 function renderFormDiaria() {
   setHTML("main-content",`
@@ -1291,9 +1332,21 @@ function renderDetalhePrest() {
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
       <button class="btn-outline btn-sm" style="width:auto" id="btn-voltar-detalhe">← Voltar</button>
       <div style="flex:1"><div style="font-weight:800;font-size:16px">${p.nome}</div><div style="font-size:12px;color:#6B7280">${p.funcao} · ${fmtBRL(p.diaria)}/dia</div></div>
+      <button style="background:#F3F4F6;border:1px solid #E5E7EB;border-radius:8px;padding:7px 12px;font-weight:700;font-size:12px;cursor:pointer;color:#374151" id="btn-edit-detalhe">✏️ Editar</button>
       <button class="btn-primary btn-sm" style="width:auto" id="btn-add-diaria-detalhe">+ Diária</button>
       <button style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:7px 12px;font-weight:700;font-size:12px;cursor:pointer;color:#92400E" id="btn-add-adt-detalhe">💵 Adiantar</button>
       <button style="background:#059669;border:none;border-radius:8px;padding:7px 12px;font-weight:700;font-size:12px;cursor:pointer;color:#fff" id="btn-pagar-detalhe">💰 Pagar tudo</button>
+    </div>
+    <div class="card" style="background:#EEF2FF;border-color:#C7D2FE;margin-bottom:12px;padding:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:10px;color:#6366F1;font-weight:700">🔑 CHAVE PIX</div>
+          <div style="font-weight:800;font-size:14px;color:#4338CA;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.pix||"Não cadastrada"}</div>
+        </div>
+        ${p.pix
+          ?`<button id="btn-copiar-pix-detalhe" style="background:#4F46E5;border:none;border-radius:8px;padding:7px 14px;font-weight:700;font-size:12px;cursor:pointer;color:#fff;flex-shrink:0">📋 Copiar</button>`
+          :`<button id="btn-add-pix-detalhe" style="background:#fff;border:1px solid #C7D2FE;border-radius:8px;padding:7px 14px;font-weight:700;font-size:12px;cursor:pointer;color:#4338CA;flex-shrink:0">+ Adicionar</button>`}
+      </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
       ${[["💰 Total pago",fmtBRL(tPago),"#059669"],["⏳ Pendente",fmtBRL(tPend),"#F59E0B"],["✅ Trabalhados",tTrab,"#374151"],["❌ Faltas",tFalt,"#DC2626"]].map(([lb,v,c])=>`<div class="card" style="margin-bottom:0;padding:10px;text-align:center"><div style="font-size:11px;color:#9CA3AF">${lb}</div><div style="font-weight:900;font-size:15px;color:${c}">${v}</div></div>`).join("")}
@@ -1316,6 +1369,9 @@ function renderDetalhePrest() {
   `);
 
   qs("btn-voltar-detalhe").addEventListener("click",()=>{APP.prestView="lista";APP.prestAtual=null;renderEquipe();});
+  qs("btn-edit-detalhe")?.addEventListener("click",()=>{APP.prestEdit=p;APP.prestView="form_prest";renderEquipe();});
+  qs("btn-copiar-pix-detalhe")?.addEventListener("click",e=>copiarPix(p.pix,e));
+  qs("btn-add-pix-detalhe")?.addEventListener("click",()=>{APP.prestEdit=p;APP.prestView="form_prest";renderEquipe();});
   qs("btn-add-diaria-detalhe").addEventListener("click",()=>{APP.diariaOc="Trabalhou";APP.diariaPago=true;APP.prestView="form_diaria";renderEquipe();});
   qs("btn-add-adt-detalhe")?.addEventListener("click",()=>{ abrirAdiantamento(p.id); });
   qs("btn-pagar-detalhe")?.addEventListener("click",()=>{ abrirConfirmarPagamento(p.id); });
@@ -1380,6 +1436,7 @@ window.togglePagoDiaria = async id => {
 
 // ── Adiantamentos ─────────────────────────────────────────────────────────────
 window.abrirAdiantamento = (prestId) => {
+  const pAdt = APP.prestadores.find(pr=>pr.id===prestId);
   const modal = qs("modal-confirm");
   modal.style.display = "flex";
   modal.innerHTML = `<div class="modal-box" onclick="event.stopPropagation()">
@@ -1387,6 +1444,13 @@ window.abrirAdiantamento = (prestId) => {
       <div style="font-weight:800;font-size:18px;color:#1F2937">💵 Registrar Adiantamento</div>
       <button id="btn-fechar-adt" style="background:#F3F4F6;border:none;border-radius:8px;padding:6px 12px;font-size:16px;cursor:pointer">✕</button>
     </div>
+    ${pAdt?.pix?`<div style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:10px;padding:10px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:10px;color:#6366F1;font-weight:700">🔑 PIX DE ${pAdt.nome.toUpperCase()}</div>
+        <div style="font-weight:800;font-size:13px;color:#4338CA;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${pAdt.pix}</div>
+      </div>
+      <button id="btn-copiar-pix-adt" style="background:#4F46E5;border:none;border-radius:8px;padding:7px 14px;font-weight:700;font-size:12px;cursor:pointer;color:#fff;flex-shrink:0">📋 Copiar</button>
+    </div>`:""}
     <div class="field"><label class="label">Valor adiantado (R$) *</label><input id="adt-valor" class="inp" type="number" placeholder="Ex: 150"/></div>
     <div class="field"><label class="label">Data</label><input id="adt-data" class="inp" type="date" value="${toDay()}"/></div>
     <div class="field"><label class="label">Observação</label><input id="adt-obs" class="inp" placeholder="Ex: Adiantamento semanal"/></div>
@@ -1395,6 +1459,7 @@ window.abrirAdiantamento = (prestId) => {
       <button class="btn-primary" id="btn-salvar-adt">💾 Salvar</button>
     </div>
   </div>`;
+  qs("btn-copiar-pix-adt")?.addEventListener("click", e => copiarPix(pAdt?.pix, e));
   qs("btn-fechar-adt").addEventListener("click", () => { modal.style.display="none"; });
   qs("btn-cancelar-adt").addEventListener("click", () => { modal.style.display="none"; });
   qs("btn-salvar-adt").addEventListener("click", async () => {
@@ -1470,11 +1535,19 @@ window.abrirConfirmarPagamento = (prestId, diariaId=null) => {
       <div style="border-top:1px solid #E5E7EB;margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;font-weight:900;color:#059669"><span>Valor líquido a pagar</span><span>${fmtBRL(valorPagar)}</span></div>
       ${tAdtDisponivel>tAdtUsar?`<div style="font-size:11px;color:#9CA3AF;margin-top:6px">Sobra de adiantamento (fica disponível p/ próximo pagamento): ${fmtBRL(tAdtDisponivel-tAdtUsar)}</div>`:""}
     </div>
+    ${p.pix?`<div style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:10px;padding:10px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div style="flex:1;min-width:0;text-align:left">
+        <div style="font-size:10px;color:#6366F1;font-weight:700">🔑 PIX DE ${p.nome.toUpperCase()}</div>
+        <div style="font-weight:800;font-size:13px;color:#4338CA;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.pix}</div>
+      </div>
+      <button id="btn-copiar-pix-pagar" style="background:#4F46E5;border:none;border-radius:8px;padding:7px 14px;font-weight:700;font-size:12px;cursor:pointer;color:#fff;flex-shrink:0">📋 Copiar</button>
+    </div>`:""}
     <div style="display:flex;gap:10px">
       <button class="btn-outline" id="btn-cancelar-pagar">Cancelar</button>
       <button class="btn-primary" id="btn-confirmar-pagar" style="background:#059669">Confirmar pagamento</button>
     </div>
   </div>`;
+  qs("btn-copiar-pix-pagar")?.addEventListener("click", e => copiarPix(p.pix, e));
   qs("btn-cancelar-pagar").addEventListener("click", () => { modal.style.display="none"; });
   qs("btn-confirmar-pagar").addEventListener("click", async () => {
     const idsPagos = diariasPend.map(d=>d.id);
